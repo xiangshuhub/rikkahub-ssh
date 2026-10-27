@@ -4,14 +4,18 @@
 
 **这是独立维护的非官方分支，与上游项目无隶属关系。请把本分支问题提交到本仓库，不要给上游作者增加支持负担。** 原项目与贡献者的版权、AGPL-3.0 许可证保持不变。
 
-- 仓库：[xiangshuhub/rikkahub-ssh](https://github.com/xiangshuhub/rikkahub-ssh)
+- 官网：[RikkaHub SSH](https://xiangshuhub.github.io/rikkahub-ssh/)
+- 国内镜像与下载：[Gitee](https://gitee.com/chunjie008/rikkahub-ssh)
+- 主仓库：[xiangshuhub/rikkahub-ssh](https://github.com/xiangshuhub/rikkahub-ssh)
 - 反馈：[Issues](https://github.com/xiangshuhub/rikkahub-ssh/issues)
 - QQ 群：**手游安全 · 1037044062** — [点击加入](https://qm.qq.com/q/qoWQXcdGf0)
 - 自愿支持：[微信捐助说明](DONATE.md)
 
 ## 发布状态
 
-首个正式版 **v3.1.2** 已提供签名 APK：[前往下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.2)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。仅使用[本仓库 Releases](https://github.com/xiangshuhub/rikkahub-ssh/releases)发布与更新，不使用上游下载通道。
+当前正式版 **v3.1.3**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.3) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.3)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
+
+v3.1.3 更新：Gitee 优先的更新检查（失败自动尝试 GitHub）、App 内离线保存微信收款码、新官网及分享链接、新的自适应应用图标。旧版 v3.1.2 若无法检查更新，请先手动覆盖安装一次。
 
 | 构建 | 应用 ID |
 | --- | --- |
@@ -105,7 +109,9 @@ bash ./gradlew :app:testGithubDebugUnitTest :workspace:testDebugUnitTest -x :web
 
 - 使用并长期备份同一 release 签名密钥；通过 `RIKKAHUB_SIGNING_PROPERTIES` 指向仓库外的签名配置。不要提交私钥、密码或用户 API Key。
 - 正式版本使用递增的 `versionCode` 与 `versionName`，GitHub tag 采用 `vX.Y.Z`。
-- 更新接口读取本仓库最新非预发布 Release，APK 附件名须以 `-release.apk` 结尾。
+- 更新检查优先请求 Gitee，连接/读取/解析失败、404 或缺少有效 APK 时再尝试 GitHub；单源请求最长 12 秒。有效的当前/旧版本不会再请求备用源。
+- 下载链接跟随成功的更新源；下载任务启动后的网络失败不会自动切源，可从官网或另一平台手动下载。
+- 两边稳定 Release 使用相同 tag 和 APK；附件名须以 `-release.apk` 结尾。镜像目前由维护者单向同步，并非自动双向镜像。
 - 无 Release / 无合格 APK 时不提示更新。调试版不接收正式版覆盖更新。
 
 ## 致谢与许可证

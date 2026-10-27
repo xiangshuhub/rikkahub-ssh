@@ -1,6 +1,6 @@
 # 正式版发布
 
-首个正式版：`v3.1.2`，`versionCode=195`，应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
+当前版本：`v3.1.3`，`versionCode=196`（首个正式版为 `v3.1.2` / 195），应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
 
 ## 签名
 
@@ -42,8 +42,8 @@ Firebase SDK 已移除，无需 Google Services 配置，也不要再排除已�
 1. 更新 `versionCode`（严格递增）、`versionName` 与文档，运行测试。
 2. 构建签名 release，验证签名、包名、版本、APK 内没有 debuggable 标志或 Firebase 初始化组件。
 3. 保持代码提交与产物一致；为该提交创建 `vX.Y.Z` tag。
-4. 创建 GitHub Release 草稿，上传三个 APK 和 `SHA256SUMS`，核对附件 SHA-256，再公开并标记 Latest。
+4. 创建 GitHub Release 草稿，上传三个 APK 和 `SHA256SUMS`，核对附件 SHA-256，再公开并标记 Latest。将相同提交/tag 推送 Gitee，再把同一批 APK 与校验文件上传 Gitee Release；匿名下载验证文件哈希。不得重新签名镜像包。
 5. Release 说明须提醒：与原版/调试版数据独立，普通工具全局自动批准默认开启，建议低权限 SSH 账户。
-6. 检查 GitHub `/releases/latest` 元数据指向正确版本。设备网络不可达 GitHub 时，应用内更新可能失败；这不是绕过签名校验的理由。
+6. 检查两边 `/releases/latest` 元数据指向正确版本；手机分别验证匿名访问。更新器优先 Gitee，失败再尝试 GitHub；两个源均失败才报错。GitHub Pages 网站由 main 分支的 docs 目录部署，不作为更新元数据源。
 
-更新器只接受本仓库的稳定 `vX.Y.Z` Release 与 `-release.apk` 附件；不会给调试包提示安装不同包名的正式包。不要发布不同签名、不同应用 ID 的 APK 到同一个正式更新通道。
+更新器只接受本项目 GitHub / Gitee 仓库对应源的稳定 `vX.Y.Z` Release 与 `-release.apk` 附件；不会给调试包提示安装不同包名的正式包。不要发布不同签名、不同应用 ID 的 APK 到同一个正式更新通道。

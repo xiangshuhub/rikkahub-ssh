@@ -204,9 +204,9 @@ fun SettingAboutPage() {
                     val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                     CardGroup {
                         item(
-                            onClick = { context.openUrl("https://github.com/xiangshuhub/rikkahub-ssh#readme") },
+                            onClick = { context.openUrl("https://xiangshuhub.github.io/rikkahub-ssh/") },
                             leadingContent = { CardGroupIcon(HugeIcons.Earth, containerColor = containerColor, contentColor = contentColor) },
-                            supportingContent = { Text("RikkaHub SSH · based on RikkaHub 3.1.1") },
+                            supportingContent = { Text("https://xiangshuhub.github.io/rikkahub-ssh/") },
                             headlineContent = { Text(stringResource(R.string.about_page_website)) },
                         )
                         item(

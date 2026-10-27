@@ -10,22 +10,24 @@ internal fun noPublishedUpdate(currentVersion: String) = UpdateInfo(
 @Serializable
 internal data class ForkRelease(
     @SerialName("tag_name") val tag: String,
-    @SerialName("published_at") val publishedAt: String,
+    @SerialName("published_at") val publishedAt: String? = null,
     val body: String? = null,
     val draft: Boolean = false,
     val prerelease: Boolean = false,
     val assets: List<ForkReleaseAsset> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null,
 ) {
-    fun toUpdateInfo(currentVersion: String): UpdateInfo {
+    fun toUpdateInfo(currentVersion: String, source: UpdateSource = UpdateSource.GITHUB): UpdateInfo {
         val version = tag.removePrefix("v")
         if (draft || prerelease || !Regex("[0-9]+\\.[0-9]+\\.[0-9]+").matches(version)) return noPublishedUpdate(currentVersion)
         val downloads = assets.filter {
-            it.name.endsWith("-release.apk") && !it.name.contains("debug", ignoreCase = true) &&
-                it.url.startsWith("https://github.com/xiangshuhub/rikkahub-ssh/releases/download/")
-        }.map { UpdateDownload(it.name, it.url, "${it.size / 1024 / 1024} MB") }
+            Regex("[A-Za-z0-9._-]+-release\\.apk").matches(it.name) && !it.name.contains("debug", ignoreCase = true) &&
+                it.url == "${source.downloadPrefix}$tag/${it.name}"
+        }.map { UpdateDownload(it.name, it.url, if (it.size > 0) "${it.size / 1024 / 1024} MB" else "") }
         if (downloads.isEmpty()) return noPublishedUpdate(currentVersion)
-        java.time.Instant.parse(publishedAt)
-        return UpdateInfo(version, publishedAt, body.orEmpty(), downloads)
+        val timestamp = publishedAt ?: createdAt ?: error("Release timestamp is missing")
+        java.time.Instant.parse(timestamp)
+        return UpdateInfo(version, timestamp, body.orEmpty(), downloads)
     }
 }
 

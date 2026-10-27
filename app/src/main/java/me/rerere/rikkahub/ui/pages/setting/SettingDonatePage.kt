@@ -1,5 +1,13 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +38,23 @@ import me.rerere.rikkahub.utils.openUrl
 fun SettingDonatePage() {
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scope = rememberCoroutineScope()
+    val saveImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
+        if (uri != null) scope.launch {
+            val message = try {
+                withContext(Dispatchers.IO) {
+                    context.resources.openRawResource(R.drawable.wechat_donation).use { input ->
+                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot open destination" }.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+                R.string.fork_donation_saved
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { R.string.fork_donation_save_failed }
+            Toast.makeText(context, context.getString(message), Toast.LENGTH_LONG).show()
+        }
+    }
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -53,8 +78,11 @@ fun SettingDonatePage() {
                 contentDescription = "WeChat donation · RikkaHub SSH",
                 modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
             )
+            TextButton(onClick = { saveImage.launch("rikkahub-ssh-wechat-donation.png") }) {
+                Text(stringResource(R.string.fork_donation_save))
+            }
             TextButton(onClick = {
-                context.openUrl("https://raw.githubusercontent.com/xiangshuhub/rikkahub-ssh/main/app/src/main/res/drawable-nodpi/wechat_donation.png")
+                context.openUrl("https://xiangshuhub.github.io/rikkahub-ssh/wechat-donation.png")
             }) { Text(stringResource(R.string.fork_donation_open)) }
         }
     }

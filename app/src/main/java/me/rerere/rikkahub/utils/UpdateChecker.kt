@@ -14,20 +14,21 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import me.rerere.common.http.await
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://api.github.com/repos/xiangshuhub/rikkahub-ssh/releases/latest"
-
 class UpdateChecker(
     private val client: OkHttpClient,
     appScope: AppScope,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val updateClient = client.newBuilder()
+        .connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     val updateState: StateFlow<UiState<UpdateInfo>> = checkUpdate().stateIn(
         scope = appScope,
@@ -39,13 +40,12 @@ class UpdateChecker(
         emit(UiState.Loading)
         emit(
             UiState.Success(
-                data = try {
-                    if (BuildConfig.DEBUG) {
+                data = if (BuildConfig.DEBUG) {
                         // Release uses a different applicationId/signature; never offer it as a debug update.
                         noPublishedUpdate(BuildConfig.VERSION_NAME)
-                    } else client.newCall(
+                    } else fetchPreferredUpdate(BuildConfig.VERSION_NAME) { source -> updateClient.newCall(
                         Request.Builder()
-                            .url(API_URL)
+                            .url(source.apiUrl)
                             .get()
                             .addHeader(
                                 "User-Agent",
@@ -54,14 +54,11 @@ class UpdateChecker(
                             .build()
                     ).await().use { response ->
                         when {
-                            response.code == 404 -> noPublishedUpdate(BuildConfig.VERSION_NAME)
-                            response.isSuccessful -> json.decodeFromString<ForkRelease>(response.body.string())
-                                .toUpdateInfo(BuildConfig.VERSION_NAME)
-                            else -> error("GitHub update request failed: HTTP ${response.code}")
+                            response.code == 404 -> null
+                            response.isSuccessful -> response.body.string()
+                            else -> error("${source.name} update request failed: HTTP ${response.code}")
                         }
                     }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
                 }
             )
         )

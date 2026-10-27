@@ -845,7 +845,7 @@
   <string name="setting_page_search_title">搜索服务</string>
   <string name="setting_page_share">分享</string>
   <string name="setting_page_share_desc">分享本APP给朋友</string>
-  <string name="setting_page_share_text">RikkaHub - 开源安卓AI助手\n\n官网: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">RikkaHub SSH - 开源安卓AI助手\n\n官网: https://xiangshuhub.github.io/rikkahub-ssh/\n国内下载: https://gitee.com/chunjie008/rikkahub-ssh/releases</string>
   <string name="setting_page_sponsor_alert_confirm">捐赠</string>
   <string name="setting_page_sponsor_alert_desc">您已启动应用超过100次！如果您喜欢使用它，请考虑支持开发者。</string>
   <string name="setting_page_sponsor_alert_dismiss">暂不</string>
@@ -1814,4 +1814,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="app_management_workspace_bindings">允许管理工作空间绑定（需同时允许管理助手）</string>
   <string name="fork_donation_note">自愿通过微信支持 RikkaHub SSH 分支维护者，并非向上游作者捐助。付款前请在微信核对收款人；所有功能均无需捐助解锁。</string>
   <string name="fork_donation_open">在浏览器打开收款码图片</string>
+  <string name="fork_donation_save">保存收款码</string>
+  <string name="fork_donation_saved">收款码已保存</string>
+  <string name="fork_donation_save_failed">保存失败，请选择其他位置后重试</string>
 </resources>

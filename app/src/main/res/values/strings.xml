@@ -875,7 +875,7 @@
   <string name="setting_page_search_title">Search Service</string>
   <string name="setting_page_share">Share</string>
   <string name="setting_page_share_desc">Share this app with friends</string>
-  <string name="setting_page_share_text">RikkaHub - Open Source Android AI Assistant\n\nWebsite: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">RikkaHub SSH - Open Source Android AI Assistant\n\nWebsite: https://xiangshuhub.github.io/rikkahub-ssh/\nDownload: https://gitee.com/chunjie008/rikkahub-ssh/releases</string>
   <string name="setting_page_sponsor_alert_confirm">Donate</string>
   <string name="setting_page_sponsor_alert_desc">You have launched the app over 100 times! If you enjoy using it, please consider supporting the developer.</string>
   <string name="setting_page_sponsor_alert_dismiss">Not Now</string>
@@ -1812,4 +1812,7 @@
   <string name="app_management_workspace_bindings">Allow workspace bindings (also requires assistant management)</string>
   <string name="fork_donation_note">Optional WeChat donation to the RikkaHub SSH maintainer, not the upstream author. Verify the recipient in WeChat before paying. No features require payment.</string>
   <string name="fork_donation_open">Open donation image in browser</string>
+  <string name="fork_donation_save">Save payment QR code</string>
+  <string name="fork_donation_saved">Payment QR code saved</string>
+  <string name="fork_donation_save_failed">Could not save image. Please choose another location.</string>
 </resources>

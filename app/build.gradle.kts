@@ -9,8 +9,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.baselineprofile)
 }
 
@@ -26,8 +24,8 @@ android {
         applicationId = "me.rerere.rikkahub.ssh"
         minSdk = 26
         targetSdk = 37
-        versionCode = 194
-        versionName = "3.1.1"
+        versionCode = 195
+        versionName = "3.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -51,7 +49,9 @@ android {
     signingConfigs {
         create("release") {
             val localProperties = Properties()
-            val localPropertiesFile = rootProject.file("local.properties")
+            // Release signing credentials stay outside the repository. Legacy local.properties also works.
+            val localPropertiesFile = providers.environmentVariable("RIKKAHUB_SIGNING_PROPERTIES").orNull
+                ?.let { rootProject.file(it) } ?: rootProject.file("local.properties")
 
             if (localPropertiesFile.exists()) {
                 localProperties.load(FileInputStream(localPropertiesFile))
@@ -220,10 +220,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.material3.adaptive.navigation3)
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
-    implementation(libs.firebase.crashlytics)
+    // This fork does not bundle Firebase Analytics/Crashlytics or require google-services.json.
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)

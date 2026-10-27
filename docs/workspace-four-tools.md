@@ -48,6 +48,6 @@
 
 ## 验证
 
-运行 `:app:testGithubDebugUnitTest :workspace:testDebugUnitTest`（本地无 Firebase 配置时排除 `:app:processGithubDebugGoogleServices`；前端已构建时可排除 `:web:buildWebUi`）。
+运行 `:app:testGithubDebugUnitTest :workspace:testDebugUnitTest`（前端已构建时可排除 `:web:buildWebUi`；不再需要 Firebase 配置）。
 
 覆盖批量编辑的原始快照语义、唯一性/重叠/缺失匹配、分页和输出上限；嵌入式 SSH/SFTP 集成测试覆盖新建不覆盖、特殊文件名、编码/CRLF、旧版本拒绝、根目录越界及符号链接拒绝。没有对真实模型和用户远端服务器进行端到端修改测试。

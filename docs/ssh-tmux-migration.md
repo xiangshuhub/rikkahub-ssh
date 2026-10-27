@@ -30,18 +30,16 @@ Initialize the pinned upstream color utilities submodule before compilation:
 git submodule update --init --depth 1
 ```
 
-Kotlin compilation and JVM tests can run without local Google Services configuration or the web frontend build:
+Firebase is no longer bundled. With the web frontend already built, compile and run JVM tests:
 
 ```sh
 ANDROID_HOME=/home/gui/Android/Sdk bash ./gradlew \
-  :app:compileGithubDebugKotlin :workspace:testDebugUnitTest \
-  -x :app:processGithubDebugGoogleServices -x :web:buildWebUi
+  :app:compileGithubDebugKotlin :workspace:testDebugUnitTest -x :web:buildWebUi
 
 ANDROID_HOME=/home/gui/Android/Sdk bash ./gradlew \
   :app:testGithubDebugUnitTest \
   --tests me.rerere.rikkahub.data.preferences.ToolApprovalPolicyTest \
-  --tests me.rerere.rikkahub.data.datastore.DefaultProvidersTest \
-  -x :app:processGithubDebugGoogleServices -x :web:buildWebUi
+  --tests me.rerere.rikkahub.data.datastore.DefaultProvidersTest -x :web:buildWebUi
 ```
 
 Tests cover embedded SSH/SFTP editing, concurrent file changes, symlink refusal, literal wildcard paths, explicit terminal directory quoting, text codecs and tmux protocol validation. A real tmux test uses an isolated temporary socket and is skipped when `/usr/bin/tmux` is unavailable; it never touches the user's default tmux server.

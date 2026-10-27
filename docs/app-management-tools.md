@@ -71,7 +71,7 @@ ANDROID_HOME=/home/gui/Android/Sdk bash ./gradlew :app:testGithubDebugUnitTest \
   --tests me.rerere.rikkahub.data.ai.tools.AppManagementPolicyTest \
   --tests me.rerere.rikkahub.data.preferences.ToolApprovalPolicyTest \
   --tests me.rerere.rikkahub.data.datastore.DefaultProvidersTest \
-  -x :app:processGithubDebugGoogleServices -x :web:buildWebUi
+  -x :web:buildWebUi
 ```
 
 覆盖权限默认关闭/撤销、跨类别绑定、版本冲突、创建重名、备份读取、Skill 编辑保留附件、内置 Skill 保护、删除绑定清理、MCP 默认禁用及凭据脱敏。工具执行测试使用真实 SettingsStore 和测试 Skill 文件适配器；未在真实模型或 MCP 服务器上做端到端验证。

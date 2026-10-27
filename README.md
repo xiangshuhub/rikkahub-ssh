@@ -11,14 +11,14 @@
 
 ## 发布状态
 
-目前先公开源码，**尚未发布本分支正式 APK**。正式包以后仅通过[本仓库 Releases](https://github.com/xiangshuhub/rikkahub-ssh/releases)发布，不使用上游下载/更新通道。
+首个正式版 **v3.1.2** 已提供签名 APK：[前往下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.2)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。仅使用[本仓库 Releases](https://github.com/xiangshuhub/rikkahub-ssh/releases)发布与更新，不使用上游下载通道。
 
 | 构建 | 应用 ID |
 | --- | --- |
-| 正式版（待发布） | `me.rerere.rikkahub.ssh` |
+| 正式版 | `me.rerere.rikkahub.ssh` |
 | 调试版 | `me.rerere.rikkahub.ssh.debug` |
 
-它们与原版 RikkaHub 可共存。调试版和正式版是两个应用，不可直接覆盖继承数据；迁移前请自行导出并妥善备份。未来正式版需要固定的独立签名密钥；仓库不包含任何签名私钥。
+它们与原版 RikkaHub 可共存。调试版和正式版是两个应用，不可直接覆盖继承数据；迁移前请自行导出并妥善备份。正式版使用固定的独立签名密钥；仓库不包含任何签名私钥。
 
 ## 本分支修改
 
@@ -72,7 +72,7 @@ SSH 与本地工作空间均提供：`workspace_read_file`、`workspace_write_fi
 - 历史聊天、剪贴板、日历等权限请按需启用。发送给云模型或联网工具的内容会到对应服务商，不要把私钥和令牌写进提示词。
 - 文件版本检查是乐观并发保护，不是远端跨客户端的原子比较交换。特殊权限位、ACL、所有权等元数据不保证完整保留。
 - 草稿恢复不是持续自动保存；Skill 整目录备份保留在应用私有目录，尚无完整一键恢复界面。
-- 本分支没有完成对所有上游联网功能/遥测代码的全面审计。调试构建仅使用本地 Firebase 占位配置，并禁用 Analytics/Crashlytics 收集；不要把它视为正式生产 Firebase 配置。
+- 从 v3.1.2 起，移除 Firebase Analytics/Crashlytics SDK、插件及聊天事件上报，所有构建均不需要 `google-services.json`。其他联网功能仍按各自设置工作；这不代表已完成对全部上游联网行为的安全审计。
 
 ## 从源码构建
 
@@ -86,8 +86,7 @@ cd web-ui
 npx --yes pnpm@10 install --frozen-lockfile
 npx --yes pnpm@10 run build
 cd ..
-bash ./gradlew :app:assembleGithubDebug \
-  -x :app:processGithubDebugGoogleServices -x :web:buildWebUi
+bash ./gradlew :app:assembleGithubDebug -x :web:buildWebUi
 ```
 
 arm64 调试 APK：`app/build/outputs/apk/github/debug/app-github-arm64-v8a-debug.apk`。
@@ -95,15 +94,16 @@ arm64 调试 APK：`app/build/outputs/apk/github/debug/app-github-arm64-v8a-debu
 测试：
 
 ```sh
-bash ./gradlew :app:testGithubDebugUnitTest :workspace:testDebugUnitTest \
-  -x :app:processGithubDebugGoogleServices -x :web:buildWebUi
+bash ./gradlew :app:testGithubDebugUnitTest :workspace:testDebugUnitTest -x :web:buildWebUi
 ```
 
 工作空间测试包含嵌入式 SSH/SFTP，部分 tmux 测试依赖本机可用的 tmux。GitHub Actions 目前仅提供手动源码测试，不自动发布 APK，也不需要发布签名密钥。
 
-### 未来正式发布约定
+### 正式发布约定
 
-- 先准备独立、长期备份的 release 签名密钥，并处理正式构建的 Firebase 配置；不要提交私钥、密码或用户 API Key。
+构建与签名流程、公钥指纹见 [发布说明](docs/RELEASING.md)。
+
+- 使用并长期备份同一 release 签名密钥；通过 `RIKKAHUB_SIGNING_PROPERTIES` 指向仓库外的签名配置。不要提交私钥、密码或用户 API Key。
 - 正式版本使用递增的 `versionCode` 与 `versionName`，GitHub tag 采用 `vX.Y.Z`。
 - 更新接口读取本仓库最新非预发布 Release，APK 附件名须以 `-release.apk` 结尾。
 - 无 Release / 无合格 APK 时不提示更新。调试版不接收正式版覆盖更新。

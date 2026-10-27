@@ -143,6 +143,17 @@ class WorkspaceDetailVM(
         refresh()
     }
 
+    suspend fun openInitialDirectory(cwd: String) {
+        if (cwd.isBlank()) return
+        val layout = repository.layout(id) ?: return
+        val root = layout.workspaceDir.trimEnd('/')
+        val inside = !cwd.startsWith('/') || root.isEmpty() || cwd == root || cwd.startsWith("$root/")
+        val area = if (inside) WorkspaceStorageArea.FILES else WorkspaceStorageArea.LINUX
+        val path = if (!cwd.startsWith('/')) cwd else if (inside) cwd.removePrefix(root).trimStart('/') else cwd.trimStart('/')
+        _state.update { it.copy(area = area, path = path, entries = emptyList(), error = null) }
+        refresh()
+    }
+
     fun open(entry: WorkspaceFileEntry) {
         if (!entry.isDirectory) return
         _state.update { it.copy(path = entry.path, entries = emptyList(), error = null) }
@@ -188,6 +199,11 @@ class WorkspaceDetailVM(
                 }
             }
         }
+    }
+
+    suspend fun createEntry(parent: String, name: String, directory: Boolean) {
+        repository.createEntry(id, parent, name, directory)
+        refresh()
     }
 
     fun delete(entry: WorkspaceFileEntry) {

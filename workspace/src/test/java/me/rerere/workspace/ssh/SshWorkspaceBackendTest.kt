@@ -163,6 +163,118 @@ class SshWorkspaceBackendTest {
         SshWorkspaceBackend(pool, WORKSPACE_ID, config)
 
     @Test
+    fun createEntriesInCurrentDirectoryWithoutOverwriting() {
+        val parent = File(remoteDir, "nested").apply { mkdirs() }
+        val backend = backend()
+        fun create(name: String, directory: Boolean) = backend.executeCommand(
+            me.rerere.workspace.workspaceCreateEntryCommand(name, directory), "nested", 5000, null,
+        )
+        assertEquals(0, create("notes ' 中文.txt", false).exitCode)
+        val file = File(parent, "notes ' 中文.txt")
+        assertTrue(file.isFile)
+        file.writeText("keep me")
+        assertTrue(create(file.name, false).exitCode != 0)
+        assertEquals("keep me", file.readText())
+        assertEquals(0, create("new folder", true).exitCode)
+        assertTrue(File(parent, "new folder").isDirectory)
+        assertTrue(create("new folder", true).exitCode != 0)
+        assertTrue(create("new folder", false).exitCode != 0)
+        val target = File(parent, "missing-target")
+        java.nio.file.Files.createSymbolicLink(File(parent, "link").toPath(), target.toPath())
+        assertTrue(create("link", false).exitCode != 0)
+        assertFalse(target.exists())
+    }
+
+    @Test
+    fun toolCreationNeverClobbersExistingFiles() {
+        val backend = backend()
+        val file = File(remoteDir, "tool*? ' 中文.txt")
+        val saved = backend.writeToolDocument(file.path, "created", "new")
+        assertEquals("created", file.readText())
+        assertEquals(saved.revision, backend.readToolDocument(file.path).revision)
+        assertThrows(Exception::class.java) { backend.writeToolDocument(file.path, "clobber", "new") }
+        assertEquals("created", file.readText())
+        assertFalse(remoteDir.listFiles().orEmpty().any { it.name.startsWith(".rikka-create-") })
+    }
+
+    @Test
+    fun toolOverwritePreservesEncodingAndRejectsStaleRevisions() {
+        val backend = backend()
+        val file = File(remoteDir, "tool-edit.txt")
+        file.writeBytes(byteArrayOf(0xff.toByte(), 0xfe.toByte()) + "old\r\n".toByteArray(Charsets.UTF_16LE))
+        val original = backend.readToolDocument(file.path)
+        val saved = backend.writeToolDocument(file.path, "new\n", original.revision)
+        assertEquals("UTF-16LE", saved.charsetName)
+        assertEquals("new\r\n", backend.readToolDocument(file.path).text)
+        assertThrows(IllegalStateException::class.java) { backend.writeToolDocument(file.path, "stale", original.revision) }
+        assertEquals(saved.revision, backend.readToolDocument(file.path).revision)
+    }
+
+    @Test
+    fun toolWritesRejectOutsideRootAndSymlinkParents() {
+        val backend = backend()
+        val outside = File(home, "outside.txt").apply { writeText("keep") }
+        val old = backend.readToolDocument(outside.path)
+        assertThrows(IllegalArgumentException::class.java) { backend.writeToolDocument(outside.path, "bad", old.revision) }
+        java.nio.file.Files.createSymbolicLink(File(remoteDir, "linked-dir").toPath(), home.toPath())
+        assertThrows(IllegalArgumentException::class.java) { backend.writeToolDocument(File(remoteDir, "linked-dir/new.txt").path, "bad", "new") }
+        java.nio.file.Files.createSymbolicLink(File(remoteDir, "linked-file").toPath(), outside.toPath())
+        assertThrows(IllegalArgumentException::class.java) { backend.writeToolDocument(File(remoteDir, "linked-file").path, "bad", old.revision) }
+        assertEquals("keep", outside.readText())
+        assertFalse(File(home, "new.txt").exists())
+    }
+
+    @Test
+    fun editorPreservesEncodingAndRejectsConcurrentChanges() {
+        val file = File(remoteDir, "edit.txt")
+        file.writeBytes(byteArrayOf(0xff.toByte(), 0xfe.toByte()) + "hello\r\n".toByteArray(Charsets.UTF_16LE))
+        val backend = backend()
+        val original = backend.readEditorDocument("edit.txt")
+        val saved = backend.saveEditorDocument("edit.txt", original, "updated\n")
+        assertEquals("UTF-16LE", saved.charsetName)
+        assertEquals("updated\r\n", backend.readEditorDocument("edit.txt").text)
+        file.writeText("external change")
+        assertThrows(IllegalStateException::class.java) {
+            backend.saveEditorDocument("edit.txt", saved, "must not overwrite")
+        }
+        assertEquals("external change", file.readText())
+        assertFalse(remoteDir.listFiles().orEmpty().any { it.name.startsWith(".rikka-edit-") })
+    }
+
+    @Test
+    fun editorTreatsGlobCharactersAsLiteralPaths() {
+        val directory = File(remoteDir, "dir*?").apply { mkdirs() }
+        val file = File(directory, "edit*?.txt").apply { writeText("original") }
+        val backend = backend()
+        val path = "dir*?/edit*?.txt"
+        backend.saveEditorDocument(path, backend.readEditorDocument(path), "saved")
+        assertEquals("saved", file.readText())
+        assertEquals(listOf("edit*?.txt"), directory.listFiles().orEmpty().map { it.name })
+    }
+
+    @Test
+    fun editorRefusesSymbolicLinkReplacement() {
+        val file = File(remoteDir, "target.txt").apply { writeText("original") }
+        java.nio.file.Files.createSymbolicLink(File(remoteDir, "link.txt").toPath(), file.toPath())
+        val backend = backend()
+        val original = backend.readEditorDocument("link.txt")
+        assertThrows(IllegalArgumentException::class.java) {
+            backend.saveEditorDocument("link.txt", original, "replacement")
+        }
+        assertEquals("original", file.readText())
+    }
+
+    @Test
+    fun terminalStartupUsesExplicitDirectoryWithoutInjectingIt() {
+        val directory = File(remoteDir, "a ' quoted dir").apply { mkdirs() }
+        val shell = backend().openShell(80, 24, startupCommand = "pwd", cwd = directory.path)
+        try {
+            assertEquals(directory.path, shell.inputStream.bufferedReader().readText().trim())
+            assertEquals(0, shell.waitFor())
+        } finally { shell.close() }
+    }
+
+    @Test
     fun unknownHostKeyIsRejectedUntilTrusted() {
         val hostKey = assertThrows(SshUnknownHostKeyException::class.java) {
             pool.probe(config())

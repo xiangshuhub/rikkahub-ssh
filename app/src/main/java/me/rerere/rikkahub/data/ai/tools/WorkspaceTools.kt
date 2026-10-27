@@ -3,6 +3,8 @@ package me.rerere.rikkahub.data.ai.tools
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -75,14 +77,19 @@ private fun createReadFileTool(
 ) = Tool(
     name = "workspace_read_file",
     description = """
-        Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
+        Read a file in the assistant's bound workspace environment (local Rootfs or remote SSH host). Paths must be absolute.
         Use ${layout.workspaceDir} for the workspace files area.
-        Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg, heic, heif, avif, ico).
+        Supports text and image files. Text results include a revision for subsequent writes/edits.
+        offset is 1-based; limit defaults to 2000 lines. Follow next_offset to continue.
+        SSH text decoding preserves UTF-8/UTF-16 BOM and CRLF for edits; max SSH text size is 2 MiB.
+        For larger files or oversized single lines use bounded shell commands.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 putPathProperty(layout, required = true)
+                put("offset", buildJsonObject { put("type", "integer"); put("description", "Starting line, 1-based; default 1") })
+                put("limit", buildJsonObject { put("type", "integer"); put("description", "Maximum lines, 1–2000; default 2000") })
             },
             required = listOf("path"),
         )
@@ -93,12 +100,20 @@ private fun createReadFileTool(
         if (path.isImagePath()) {
             workspaceRepository.readImageInRootfs(workspaceId, path)
         } else {
-            val text = workspaceRepository.readTextInRootfs(workspaceId, path)
+            val document = workspaceRepository.readToolDocument(workspaceId, path)
+            fun integer(name: String, default: Int): Int = it.jsonObject[name]?.let { value ->
+                value.jsonPrimitive.intOrNull ?: error("$name must be an integer")
+            } ?: default
+            val page = workspaceTextPage(document.text, integer("offset", 1), integer("limit", 2000))
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
                         put("path", path)
-                        put("text", text)
+                        put("text", page.text)
+                        put("revision", document.revision)
+                        put("total_lines", page.totalLines)
+                        put("offset", integer("offset", 1))
+                        page.nextOffset?.let { next -> put("next_offset", next) }
                     }.toString()
                 )
             )
@@ -114,8 +129,10 @@ private fun createWriteFileTool(
 ) = Tool(
     name = "workspace_write_file",
     description = """
-        Write a UTF-8 text file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
-        Use ${layout.workspaceDir} for the workspace files area.
+        Create or fully replace a text file. Use expected_revision=new for creation (never clobbers an existing file).
+        For replacement, first read the file and supply its revision. Prefer edit for targeted changes.
+        SSH writes are confined to ${layout.workspaceDir}; parent directories must already exist, no symlinks.
+        SSH preserves existing encoding and line endings; safe creation/overwrite requires server hardlink/POSIX rename support.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -125,12 +142,13 @@ private fun createWriteFileTool(
                     put("type", "string")
                     put("description", "UTF-8 text content to write")
                 })
+                put("expected_revision", buildJsonObject { put("type", "string"); put("description", "Revision from read, or new to create without overwriting") })
                 put("overwrite", buildJsonObject {
                     put("type", "boolean")
-                    put("description", "Whether to overwrite an existing file. Defaults to true.")
+                    put("description", "Legacy flag: false requires creation. Replacement always requires expected_revision from read.")
                 })
             },
-            required = listOf("path", "text"),
+            required = listOf("path", "text", "expected_revision"),
         )
     },
     needsApproval = { needsApproval("workspace_write_file") || it.pathOutsideWritableRoots(layout, "path") },
@@ -138,9 +156,10 @@ private fun createWriteFileTool(
         val params = it.jsonObject
         val path = params.absolutePath("path")
         val text = params.string("text") ?: error("text is required")
-        val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = workspaceRepository.writeAbsoluteText(workspaceId, path, text, overwrite)
-        listOf(UIMessagePart.Text(entry.toJson().toString()))
+        val expected = params.string("expected_revision") ?: error("expected_revision is required; read first, or use new for creation")
+        require(params.string("overwrite") != "false" || expected == "new") { "overwrite=false only permits creation" }
+        val saved = workspaceRepository.writeToolDocument(workspaceId, path, text, expected)
+        listOf(UIMessagePart.Text(buildJsonObject { put("path", path); put("revision", saved.revision); put("saved", true) }.toString()))
     },
 )
 
@@ -152,15 +171,29 @@ private fun createEditFileTool(
 ) = Tool(
     name = "workspace_edit_file",
     description = """
-        Edit a UTF-8 text file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
+        Precisely edit a text file in the assistant's bound workspace environment. Paths must be absolute.
         Use ${layout.workspaceDir} for the workspace files area.
-        Provide old_text and new_text. By default old_text must occur exactly once; set replace_all=true to replace every occurrence.
-        If no exact match is found, whitespace-tolerant line matching is attempted automatically.
+        First read the file and pass expected_revision. Provide edits=[{old_text,new_text}, ...].
+        All old_text strings must match exactly once in the ORIGINAL file; edits must not overlap.
+        All edits are validated before a single save. No fuzzy matching or replace_all.
+        SSH writes stay inside ${layout.workspaceDir}, preserve encoding/CRLF, and refuse symbolic links.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 putPathProperty(layout, required = true)
+                put("expected_revision", buildJsonObject { put("type", "string"); put("description", "Revision from the most recent read") })
+                put("edits", buildJsonObject {
+                    put("type", "array")
+                    put("items", buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {
+                            put("old_text", buildJsonObject { put("type", "string") })
+                            put("new_text", buildJsonObject { put("type", "string") })
+                        })
+                        put("required", kotlinx.serialization.json.JsonArray(listOf("old_text", "new_text").map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                    })
+                })
                 put("old_text", buildJsonObject {
                     put("type", "string")
                     put("description", "Exact text to replace")
@@ -171,38 +204,35 @@ private fun createEditFileTool(
                 })
                 put("replace_all", buildJsonObject {
                     put("type", "boolean")
-                    put("description", "Whether to replace every occurrence. Defaults to false.")
+                    put("description", "Legacy parameter; true is rejected. Supply unique exact matches instead.")
                 })
             },
-            required = listOf("path", "old_text", "new_text"),
+            required = listOf("path", "expected_revision"),
         )
     },
     needsApproval = { needsApproval("workspace_edit_file") || it.pathOutsideWritableRoots(layout, "path") },
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")
-        val oldText = params.string("old_text") ?: error("old_text is required")
-        val newText = params.string("new_text") ?: error("new_text is required")
-        val replaceAll = params["replace_all"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-        require(oldText.isNotEmpty()) { "old_text must not be empty" }
-
-        val original = workspaceRepository.readTextInRootfs(workspaceId, path)
-        // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
-        val result = try {
-            replaceText(original, oldText, newText, replaceAll)
-        } catch (e: IllegalArgumentException) {
-            error("${e.message} (path: $path)")
-        }
-        val entry = workspaceRepository.writeAbsoluteText(workspaceId, path, result.updated, overwrite = true)
-        val diff = generateUnifiedDiff(original, result.updated, entry.path)
+        require(params.string("replace_all") != "true") { "replace_all is not supported; use unique exact edits" }
+        require("edits" !in params || ("old_text" !in params && "new_text" !in params)) { "Do not mix edits with legacy fields" }
+        val edits = params["edits"]?.jsonArray?.map { value ->
+            WorkspaceTextEdit(value.jsonObject.string("old_text") ?: error("old_text is required"),
+                value.jsonObject.string("new_text") ?: error("new_text is required"))
+        } ?: listOf(WorkspaceTextEdit(params.string("old_text") ?: error("edits is required"), params.string("new_text") ?: error("new_text is required")))
+        val expected = params.string("expected_revision") ?: error("expected_revision is required; read first")
+        val original = workspaceRepository.readToolDocument(workspaceId, path)
+        check(original.revision == expected) { "File changed; read again. Nothing saved." }
+        val updated = applyWorkspaceEdits(original.text, edits)
+        val saved = workspaceRepository.writeToolDocument(workspaceId, path, updated, expected)
+        val diff = generateUnifiedDiff(original.text, saved.text, path)
         listOf(
             UIMessagePart.Text(
                 text = buildJsonObject {
-                    put("path", entry.path)
-                    put("replacements", result.replacements)
-                    if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
-                    put("sizeBytes", entry.sizeBytes)
-                    put("updatedAt", entry.updatedAt)
+                    put("path", path)
+                    put("replacements", edits.size)
+                    put("revision", saved.revision)
+                    put("matchStrategy", "exact")
                 }.toString(),
                 // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
                 metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
@@ -221,13 +251,13 @@ private fun createShellTool(
     name = "workspace_shell",
     description = buildString {
         append(
-            "Run a shell command in the assistant's bound workspace Rootfs. The workspace files area is mounted at ${layout.workspaceDir}. "
+            "Run a shell command in the assistant's bound workspace environment (local Rootfs or remote SSH host). The workspace files area is ${layout.workspaceDir}. "
         )
         append("Use cwd for a path relative to the workspace files root. ")
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
         }
-        append("Requires Rootfs to be installed and ready.")
+        append("Requires the workspace to be ready. Use read for file inspection, edit for precise changes, and write for creation/full replacement. Use shell for search, builds and tests.")
     },
     parameters = {
         InputSchema.Obj(

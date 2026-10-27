@@ -31,6 +31,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -131,6 +135,8 @@ fun ChatInput(
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onMoreClick: () -> Unit,
+    onOpenTerminal: (() -> Unit)? = null,
+    onOpenWorkspaceFiles: (() -> Unit)? = null,
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
@@ -307,6 +313,14 @@ fun ChatInput(
 
                         }
 
+                        onOpenTerminal?.let { action ->
+                            TextButton(enabled = !voiceState.isActive, onClick = action,
+                                contentPadding = PaddingValues(0.dp), modifier = Modifier.width(40.dp).semantics { contentDescription = "打开工作区终端" }) { Text(">_") }
+                        }
+                        onOpenWorkspaceFiles?.let { action ->
+                            TextButton(enabled = !voiceState.isActive, onClick = action,
+                                contentPadding = PaddingValues(0.dp), modifier = Modifier.width(40.dp).semantics { contentDescription = "打开工作区文件" }) { Text("文件") }
+                        }
                         ActionIconButton(
                             onClick = onMoreClick
                         ) {

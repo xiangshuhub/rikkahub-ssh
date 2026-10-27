@@ -71,6 +71,13 @@ object EditFileToolUI : ToolUIRenderer {
             return context.tool.output.firstOrNull()?.metadataAs<DiffMetadata>()?.diff
         }
         val path = context.arguments.getStringContent("path") ?: return null
+        (context.arguments.jsonObjectOrNull?.get("edits") as? kotlinx.serialization.json.JsonArray)?.let { edits ->
+            return edits.mapIndexedNotNull { index, edit ->
+                val old = edit.getStringContent("old_text") ?: return@mapIndexedNotNull null
+                val new = edit.getStringContent("new_text") ?: return@mapIndexedNotNull null
+                generateUnifiedDiff(old, new, "$path (edit ${index + 1})")
+            }.joinToString("\n").takeIf { it.isNotBlank() }
+        }
         val oldText = context.arguments.getStringContent("old_text") ?: return null
         val newText = context.arguments.getStringContent("new_text") ?: return null
         return generateUnifiedDiff(oldText, newText, path)

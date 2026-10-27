@@ -12,6 +12,8 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.preferences.ToolApprovalPreferences
+import me.rerere.rikkahub.data.preferences.shouldAutoApproveTool
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -26,7 +28,7 @@ private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
 // 搜索结果的体积由用户设置的结果数决定，且结果列表 UI 与引用跳转都依赖完整的 JSON 结构，不参与截断
-private val TOOLS_WITHOUT_OUTPUT_TRUNCATION = setOf("search_web")
+private val TOOLS_WITHOUT_OUTPUT_TRUNCATION = setOf("search_web", "workspace_read_file")
 
 internal fun shouldUseExternalWebSearch(assistant: Assistant, model: Model): Boolean {
     return assistant.enableWebSearch && BuiltInTools.Search !in model.tools
@@ -44,7 +46,9 @@ class ChatToolFactory(
     private val mcpManager: McpManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
+    settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
 ) {
+    private val appManagement = AppManagementTools(context, settingsStore, skillManager, mcpManager, workspaceRepository)
     suspend fun createTools(
         settings: Settings,
         assistant: Assistant,
@@ -53,6 +57,7 @@ class ChatToolFactory(
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val tools = buildList {
+            addAll(appManagement.tools())
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
             }
@@ -97,7 +102,17 @@ class ChatToolFactory(
         // 文件放在本机, 只有本地 Rootfs 挂载了 /tool_outputs, 远程工作区同样读不到
         val canReadToolOutputs = workspaceTools.isNotEmpty() &&
             assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }?.capabilities()?.rootfs == true
-        return if (canReadToolOutputs) tools.map(::withOutputTruncation) else tools
+        val approvals = ToolApprovalPreferences(context)
+        approvals.rememberTools(tools.mapTo(mutableSetOf()) { it.name })
+        val (autoApprove, grants) = approvals.snapshot()
+        val authorizedTools = tools.map { tool ->
+            if (shouldAutoApproveTool(tool.name, autoApprove, grants)) {
+                tool.copy(needsApproval = { false })
+            } else {
+                tool
+            }
+        }
+        return if (canReadToolOutputs) authorizedTools.map(::withOutputTruncation) else authorizedTools
     }
 
     private fun withOutputTruncation(tool: Tool): Tool {

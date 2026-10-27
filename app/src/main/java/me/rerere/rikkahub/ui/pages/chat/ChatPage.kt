@@ -76,6 +76,7 @@ import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
@@ -396,6 +397,20 @@ private fun ChatPageContent(
                     },
                     onUpdateChatModel = vm::setChatModel,
                     onUpdateAssistant = vm::updateAssistant,
+                    onOpenTerminal = {
+                        val workspaceId = assistant.workspaceId?.toString()
+                        if (workspaceId == null) {
+                            toaster.show("请先在助手设置中绑定工作区")
+                            navController.navigate(Screen.Workspaces)
+                        } else navController.navigate(Screen.WorkspaceTerminal(workspaceId, conversation.workspaceCwd.orEmpty()))
+                    },
+                    onOpenWorkspaceFiles = {
+                        val workspaceId = assistant.workspaceId?.toString()
+                        if (workspaceId == null) {
+                            toaster.show("请先在助手设置中绑定工作区")
+                            navController.navigate(Screen.Workspaces)
+                        } else navController.navigate(Screen.WorkspaceDetail(workspaceId, true, conversation.workspaceCwd.orEmpty()))
+                    },
                     onMoreClick = {
                         showFilesSheet = true
                     },

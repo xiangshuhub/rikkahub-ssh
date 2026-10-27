@@ -86,7 +86,7 @@ import me.rerere.rikkahub.utils.joinQQGroup
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.writeClipboardText
-import me.rerere.ui.icons.DiscordIcon
+import me.rerere.hugeicons.stroke.Github
 import me.rerere.ui.icons.TencentQQIcon
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -256,6 +256,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingToolApprovals) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.tool_approvals_auto)) },
+                        headlineContent = { Text(stringResource(R.string.tool_approvals_title)) },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingWeb) },
                         leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
@@ -336,12 +342,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 }
                                 IconButton(
                                     onClick = {
-                                        context.openUrl("https://discord.gg/9weBqxe5c4")
+                                        context.openUrl("https://github.com/xiangshuhub/rikkahub-ssh/issues")
                                     }
                                 ) {
                                     Icon(
-                                        imageVector = DiscordIcon,
-                                        contentDescription = "Discord",
+                                        imageVector = HugeIcons.Github,
+                                        contentDescription = "GitHub Issues",
                                         tint = MaterialTheme.colorScheme.secondary
                                     )
                                 }
@@ -352,9 +358,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     item(
                         onClick = {
                             val docUrl = if (java.util.Locale.getDefault().language == "zh") {
-                                "https://docs.rikka-ai.com/zh/introduction"
+                                "https://github.com/xiangshuhub/rikkahub-ssh#readme"
                             } else {
-                                "https://docs.rikka-ai.com/introduction"
+                                "https://github.com/xiangshuhub/rikkahub-ssh#readme"
                             }
                             context.openUrl(docUrl)
                         },
@@ -462,15 +468,13 @@ private fun ProviderConfigWarningCard(onClick: () -> Unit) {
 private data class QQGroup(
     val name: String,
     val key: String? = null,
+    val url: String? = null,
     val number: String? = null,
     val icon: ImageVector = TencentQQIcon,
 )
 
 private val QQ_GROUPS = listOf(
-    QQGroup("RikkaHub 一群", "4POE46u9e_zoy1TkNfWdCvueR9CKFJdk"),
-    QQGroup("RikkaHub 二群", "Qsm0whzbPsm1UyNpR683ulLyMZ2Pqrw0"),
-    QQGroup("RikkaHub 三群", "Qc9oP-9tXioZeQEvEvI2_owWtBAIx3lS"),
-    QQGroup("抖音一群", number = "569655479852", icon = HugeIcons.Tiktok),
+    QQGroup("手游安全 · RikkaHub SSH", number = "1037044062", url = "https://qm.qq.com/q/qoWQXcdGf0"),
 )
 
 @Composable
@@ -486,7 +490,9 @@ private fun QQGroupBottomSheet(onDismiss: () -> Unit) {
             QQ_GROUPS.forEach { group ->
                 ListItem(
                     onClick = {
-                        if (group.number != null) {
+                        if (group.url != null) {
+                            context.openUrl(group.url)
+                        } else if (group.number != null) {
                             context.writeClipboardText(group.number)
                             Toast.makeText(context, "群号已复制", Toast.LENGTH_SHORT).show()
                         } else {

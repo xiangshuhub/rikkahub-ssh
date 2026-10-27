@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Local debug-only placeholder, not credentials for a real Firebase project. -->
+    <string name="google_app_id" translatable="false">1:123456789012:android:0000000000000000000000</string>
+    <string name="google_api_key" translatable="false">local-debug-placeholder-not-a-real-key</string>
+    <string name="project_id" translatable="false">rikkahub-local-debug</string>
+</resources>

@@ -63,6 +63,118 @@ class SshWorkspaceBackend(
         }
     }
 
+    /** Bounded, strict text decoding for the manual editor; AI readText remains unchanged. */
+    fun readEditorDocument(path: String): SshTextDocument {
+        val file = resolve(WorkspaceStorageArea.FILES, path)
+        return withSftp(WorkspaceStorageArea.FILES, retry = true) { sftp ->
+            decodeSshText(sftp.editorBytes(file))
+        }
+    }
+
+    /** Optimistic conflict detection, not a cross-client atomic compare-and-swap. */
+    fun saveEditorDocument(path: String, original: SshTextDocument, text: String): SshTextDocument {
+        return saveDocumentAbsolute(resolve(WorkspaceStorageArea.FILES, path), original, text)
+    }
+
+    private fun saveDocumentAbsolute(file: String, original: SshTextDocument, text: String, toolWrite: Boolean = false): SshTextDocument {
+        val bytes = original.encode(text)
+        require(bytes.size <= minOf(workspaceConfig.maxWriteBytes, 2 * 1024 * 1024)) { "File too large" }
+        return withSftp(WorkspaceStorageArea.FILES, retry = false) { sftp ->
+            if (toolWrite) sftp.validateToolWritePath(file)
+            val attrs = sftp.lstat(file.sftpQuote())
+            require(!attrs.isLink && !attrs.isDir) { "Refusing to replace a symbolic link or directory" }
+            check(textRevision(sftp.editorBytes(file)) == original.revision) { "文件已被其他程序修改，未覆盖。请保留草稿并重新打开文件。" }
+            check(sftp.getExtension("posix-rename@openssh.com") == "1") { "Server lacks atomic rename support; refusing unsafe overwrite" }
+            val temp = file.parentPath().child(".rikka-edit-${java.util.UUID.randomUUID()}")
+            try {
+                sftp.put(ByteArrayInputStream(bytes), temp.sftpQuote(), ChannelSftp.OVERWRITE)
+                sftp.chmod(attrs.permissions and 511, temp.sftpQuote())
+                check(textRevision(sftp.editorBytes(file)) == original.revision && !sftp.lstat(file.sftpQuote()).isLink) {
+                    "文件在保存期间发生变化，未覆盖。请重新读取。"
+                }
+                if (toolWrite) sftp.validateToolWritePath(file)
+                sftp.rename(temp.sftpQuote(), file.sftpQuote())
+                decodeSshText(bytes)
+            } finally {
+                runCatching { sftp.rm(temp.sftpQuote()) }
+            }
+        }
+    }
+
+    fun readToolDocument(path: String): SshTextDocument =
+        pool.use(id, config, retry = true) { connection ->
+            connection.sftp { decodeSshText(it.editorBytes(normalizeAbsolute(path))) }
+        }
+
+    /** Direct AI writes are confined to the configured files root, unlike arbitrary shell commands. */
+    fun writeToolDocument(path: String, text: String, expectedRevision: String): SshTextDocument {
+        val file = normalizeAbsolute(path)
+        if (expectedRevision != "new") {
+            val original = readToolDocument(file)
+            check(original.revision == expectedRevision) { "File changed; read again before editing. Nothing saved." }
+            return saveDocumentAbsolute(file, original, text, toolWrite = true)
+        }
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        val document = decodeSshText(bytes)
+        require(bytes.size <= workspaceConfig.maxWriteBytes) { "File too large" }
+        return withSftp(WorkspaceStorageArea.FILES, retry = false) { sftp ->
+            sftp.validateToolWritePath(file)
+            check(sftp.getExtension("hardlink@openssh.com") == "1") {
+                "Server lacks safe no-clobber creation support (hardlink@openssh.com). Use the manual file manager instead."
+            }
+            val temp = file.parentPath().child(".rikka-create-${java.util.UUID.randomUUID()}")
+            try {
+                sftp.put(ByteArrayInputStream(bytes), temp.sftpQuote(), ChannelSftp.OVERWRITE)
+                sftp.validateToolWritePath(file)
+                // A hard link creates the final name atomically and refuses an existing target.
+                sftp.hardlink(temp.sftpQuote(), file.sftpQuote())
+                document
+            } finally {
+                runCatching { sftp.rm(temp.sftpQuote()) }
+            }
+        }
+    }
+
+    private fun ChannelSftp.validateToolWritePath(file: String) {
+        val root = normalizeAbsolute(workspaceDir)
+        require(file != root && (root == "/" || file.startsWith("$root/"))) { "Direct writes must stay inside the workspace files root" }
+        // Some SFTP servers return lexical paths from REALPATH without resolving links.
+        // Check every ancestor with LSTAT as well; REALPATH alone is not a boundary check.
+        var ancestor = file.parentPath()
+        while (true) {
+            val parentAttrs = lstat(ancestor.sftpQuote())
+            require(parentAttrs.isDir && !parentAttrs.isLink) { "Refusing a symbolic-link parent; use a real directory" }
+            if (ancestor == "/") break
+            ancestor = ancestor.parentPath()
+        }
+        val canonicalRoot = realpath(root).trimEnd('/')
+        val relativeParent = file.parentPath().removePrefix(root).trim('/')
+        val expectedParent = if (relativeParent.isEmpty()) canonicalRoot.ifEmpty { "/" } else "$canonicalRoot/$relativeParent"
+        require(realpath(file.parentPath()) == expectedParent) { "Refusing a symbolic-link parent; use a real path inside the workspace" }
+        val attrs = try { lstat(file.sftpQuote()) } catch (e: SftpException) {
+            if (e.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw e
+            null
+        }
+        require(attrs == null || attrs.isReg && !attrs.isLink) { "Refusing a symbolic link or non-regular file" }
+    }
+
+    private fun ChannelSftp.editorBytes(path: String): ByteArray {
+        val limit = 2 * 1024 * 1024
+        require(requireFile(path, path).size <= limit) { "File too large" }
+        val buffer = ByteArrayOutputStream()
+        get(path.sftpQuote(), object : OutputStream() {
+            override fun write(value: Int) {
+                require(buffer.size() < limit) { "File too large" }
+                buffer.write(value)
+            }
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                require(buffer.size().toLong() + length <= limit) { "File too large" }
+                buffer.write(bytes, offset, length)
+            }
+        })
+        return buffer.toByteArray()
+    }
+
     override fun writeText(path: String, text: String, overwrite: Boolean): WorkspaceFileEntry {
         val bytes = text.toByteArray(Charsets.UTF_8)
         require(bytes.size <= workspaceConfig.maxWriteBytes) {
@@ -182,16 +294,17 @@ class SshWorkspaceBackend(
     }
 
     /** 打开交互式终端: 在工作目录下启动用户的登录 shell */
-    fun openShell(columns: Int, rows: Int): SshShell =
+    fun openShell(columns: Int, rows: Int, startupCommand: String? = null, cwd: String = ""): SshShell =
         pool.openShell(id, config) { connection, onClose ->
             connection.ensureDir(workspaceDir)
             // 外层交给探测到的 POSIX shell 解析, 再 exec 用户自己的登录 shell ($SHELL 缺失时退回探测结果)
             val remoteCommand = listOf(
                 connection.shell,
                 "-c",
-                "cd -- \"\$1\"; exec \"\${SHELL:-\$0}\" -l",
+                if (startupCommand == null) "cd -- \"\$1\" && exec \"\${SHELL:-\$0}\" -l"
+                else "cd -- \"\$1\" && $startupCommand",
                 connection.shell,
-                workspaceDir,
+                normalizeAbsolute(if (cwd.startsWith('/')) cwd else layout.absolutePath(WorkspaceStorageArea.FILES, cwd)),
             ).joinToString(" ") { it.shellQuote() }
             connection.openShell(remoteCommand, columns, rows, onClose)
         }

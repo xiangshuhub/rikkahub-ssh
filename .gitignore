@@ -11,3 +11,17 @@ local.properties
 .cursor
 .history
 .kotlin
+
+# Private signing and credentials (never publish)
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+**/google-services.json
+*.apk
+*.aab

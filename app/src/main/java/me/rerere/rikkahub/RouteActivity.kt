@@ -533,6 +533,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingFilesPage()
                             }
 
+                            entry<Screen.SettingToolApprovals> {
+                                me.rerere.rikkahub.ui.pages.setting.SettingToolApprovalsPage()
+                            }
+
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
                             }
@@ -566,11 +570,11 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.WorkspaceDetail> { key ->
-                                WorkspaceDetailPage(key.id)
+                                WorkspaceDetailPage(key.id, key.openFiles, key.cwd)
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
-                                WorkspaceTerminalPage(key.id)
+                                WorkspaceTerminalPage(key.id, key.cwd)
                             }
 
                             entry<Screen.WorkspaceSshEditor> { key ->
@@ -784,6 +788,9 @@ sealed interface Screen : NavKey {
     data object SettingWeb : Screen
 
     @Serializable
+    data object SettingToolApprovals : Screen
+
+    @Serializable
     data object Debug : Screen
 
     @Serializable
@@ -805,10 +812,10 @@ sealed interface Screen : NavKey {
     data object Workspaces : Screen
 
     @Serializable
-    data class WorkspaceDetail(val id: String) : Screen
+    data class WorkspaceDetail(val id: String, val openFiles: Boolean = false, val cwd: String = "") : Screen
 
     @Serializable
-    data class WorkspaceTerminal(val id: String) : Screen
+    data class WorkspaceTerminal(val id: String, val cwd: String = "") : Screen
 
     /** [id] 为 null 时新建 */
     @Serializable

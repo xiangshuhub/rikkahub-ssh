@@ -21,7 +21,7 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
+private const val API_URL = "https://api.github.com/repos/xiangshuhub/rikkahub-ssh/releases/latest"
 
 class UpdateChecker(
     private val client: OkHttpClient,
@@ -40,20 +40,25 @@ class UpdateChecker(
         emit(
             UiState.Success(
                 data = try {
-                    val response = client.newCall(
+                    if (BuildConfig.DEBUG) {
+                        // Release uses a different applicationId/signature; never offer it as a debug update.
+                        noPublishedUpdate(BuildConfig.VERSION_NAME)
+                    } else client.newCall(
                         Request.Builder()
                             .url(API_URL)
                             .get()
                             .addHeader(
                                 "User-Agent",
-                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+                                "RikkaHub-SSH ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
                             )
                             .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
+                    ).await().use { response ->
+                        when {
+                            response.code == 404 -> noPublishedUpdate(BuildConfig.VERSION_NAME)
+                            response.isSuccessful -> json.decodeFromString<ForkRelease>(response.body.string())
+                                .toUpdateInfo(BuildConfig.VERSION_NAME)
+                            else -> error("GitHub update request failed: HTTP ${response.code}")
+                        }
                     }
                 } catch (e: Exception) {
                     throw Exception("Failed to fetch update info", e)

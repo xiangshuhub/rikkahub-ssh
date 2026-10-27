@@ -50,8 +50,8 @@ class WorkspaceTerminalSessionManager internal constructor(
         launchCreateTab(workspace = workspace, onlyIfEmpty = true)
     }
 
-    internal fun createTab(workspace: WorkspaceEntity) {
-        launchCreateTab(workspace = workspace, onlyIfEmpty = false)
+    internal fun createTab(workspace: WorkspaceEntity, startupCommand: String? = null, cwd: String = "", tmuxLabel: String? = null) {
+        launchCreateTab(workspace = workspace, onlyIfEmpty = false, startupCommand = startupCommand, cwd = cwd, tmuxLabel = tmuxLabel)
     }
 
     internal fun selectTab(root: String, tabId: Long) {
@@ -104,14 +104,14 @@ class WorkspaceTerminalSessionManager internal constructor(
         }
     }
 
-    private fun launchCreateTab(workspace: WorkspaceEntity, onlyIfEmpty: Boolean) {
+    private fun launchCreateTab(workspace: WorkspaceEntity, onlyIfEmpty: Boolean, startupCommand: String? = null, cwd: String = "", tmuxLabel: String? = null) {
         val root = workspace.root
         if (root in creationJobs) return
 
         lateinit var job: Job
         job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
-                createTab(workspace = workspace, onlyIfEmpty = onlyIfEmpty)
+                createTab(workspace = workspace, onlyIfEmpty = onlyIfEmpty, startupCommand = startupCommand, cwd = cwd, tmuxLabel = tmuxLabel)
             } finally {
                 creationJobs.remove(root, job)
             }
@@ -120,7 +120,7 @@ class WorkspaceTerminalSessionManager internal constructor(
         job.start()
     }
 
-    private suspend fun createTab(workspace: WorkspaceEntity, onlyIfEmpty: Boolean) = withContext(
+    private suspend fun createTab(workspace: WorkspaceEntity, onlyIfEmpty: Boolean, startupCommand: String?, cwd: String, tmuxLabel: String?) = withContext(
         Dispatchers.Main.immediate
     ) {
         val root = workspace.root
@@ -171,7 +171,7 @@ class WorkspaceTerminalSessionManager internal constructor(
         )
         val session = runCatching {
             createWorkspaceTerminalSession(
-                transport = terminalTransport(workspace),
+                transport = terminalTransport(workspace, startupCommand, cwd),
                 root = root,
                 client = client,
             )
@@ -187,6 +187,7 @@ class WorkspaceTerminalSessionManager internal constructor(
         val tab = WorkspaceTerminalTab(
             id = tabId,
             number = tabNumber,
+            tmuxLabel = tmuxLabel,
             session = session,
             client = client,
         )
@@ -201,11 +202,11 @@ class WorkspaceTerminalSessionManager internal constructor(
         }
     }
 
-    private fun terminalTransport(workspace: WorkspaceEntity): TerminalTransport =
+    private fun terminalTransport(workspace: WorkspaceEntity, startupCommand: String?, cwd: String): TerminalTransport =
         if (workspace.isSsh()) {
             val settings = workspace.sshSettings() ?: error("SSH workspace config is missing: ${workspace.id}")
             SshTerminalTransport(address = "${settings.username}@${settings.host}:${settings.port}") { columns, rows ->
-                workspaceRepository.openSshShell(workspace, columns, rows)
+                workspaceRepository.openSshShell(workspace, columns, rows, startupCommand, cwd)
             }
         } else {
             workspaceManager.terminalLaunch(workspace.root, workspace.shellCompatibilityMode)?.toTransport()
@@ -270,6 +271,7 @@ internal data class WorkspaceTerminalTab(
     val session: TerminalSession,
     val client: WorkspaceTerminalSessionClient,
     val title: String? = null,
+    val tmuxLabel: String? = null,
     val finished: Boolean = false,
 )
 

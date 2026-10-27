@@ -15,7 +15,7 @@ enum class WorkspaceType(val capabilities: WorkspaceCapabilities) {
     LOCAL(WorkspaceCapabilities(rootfs = true, terminal = true, localFiles = true, fileWriteTools = true)),
 
     /** 通过 SSH 连接的远程机器 */
-    SSH(WorkspaceCapabilities(rootfs = false, terminal = true, localFiles = false, fileWriteTools = false)),
+    SSH(WorkspaceCapabilities(rootfs = false, terminal = true, localFiles = false, fileWriteTools = true)),
 }
 
 /** 一种工作区能用哪些功能; 调用方按能力判断, 不直接比较类型 */
@@ -28,8 +28,8 @@ data class WorkspaceCapabilities(
     val localFiles: Boolean,
     /**
      * AI 可以用写文件、编辑文件工具直接写入; 否则只能经 shell 修改文件。
-     * SFTP 覆盖写入时服务器打开文件就会清空原内容, 写到一半被取消或断线会留下残缺的文件;
-     * shell 命令连同要写的内容一起发到远程, 在那边本地写入, 写入过程不经过网络。
+     * SSH 工具使用版本校验、临时文件和原子发布，不能直接调用会截断原文件的 SFTP 覆盖写入。
+     * 服务器缺少必要扩展时必须拒绝对应写入，不降级为不安全覆盖。
      */
     val fileWriteTools: Boolean,
 )

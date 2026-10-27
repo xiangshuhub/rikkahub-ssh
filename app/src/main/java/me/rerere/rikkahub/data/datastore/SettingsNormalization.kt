@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.datastore
 
+import me.rerere.ai.provider.ProviderSetting
+
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
     withBuiltInDefaults().withoutInvalidReferences().withValuesInRange()
@@ -12,7 +14,14 @@ internal fun Settings.withBuiltInDefaults(): Settings {
             providers.add(defaultProvider.copyProvider())
         }
     }
-    providers = providers.map { provider ->
+    providers = providers.map { stored ->
+        // Rename is the migration marker: never overwrite credentials/models or keep
+        // forcing Responses if the user later switches the renamed provider back.
+        val provider = if (stored is ProviderSetting.OpenAI &&
+            stored.id.toString() == "ae5ccf46-e18b-4d25-820a-a19ef1100003" &&
+            stored.name == "OpenCode Zen · Chat Completions" &&
+            stored.baseUrl.trimEnd('/') == "https://opencode.ai/inference/openai/v1"
+        ) stored.copy(name = "OpenCode Zen · Responses", useResponseApi = true) else stored
         val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
         if (defaultProvider != null) {
             provider.copyProvider(

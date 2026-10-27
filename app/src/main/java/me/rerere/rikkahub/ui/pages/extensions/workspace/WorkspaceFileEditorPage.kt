@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.platform.LocalContext
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.workspace.ssh.SshTextDocument
+import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -66,19 +72,74 @@ fun WorkspaceFileEditorPage(
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var original by remember(id, path) { mutableStateOf<SshTextDocument?>(null) }
+    val context = LocalContext.current
+    val navController = LocalNavController.current
+    val drafts = remember(id, path) { WorkspaceEditorDraftStore(context, id, path) }
+    var pendingDraft by remember(id, path) { mutableStateOf<WorkspaceEditorDraft?>(null) }
+    var confirmLeave by remember { mutableStateOf(false) }
+    val dirty = editable && original != null && textState.text.toString() != original?.text
+    fun leave() {
+        if (saving) return
+        if (dirty) confirmLeave = true else navController.popBackStack()
+    }
+    BackHandler(enabled = dirty || saving) { leave() }
 
     LaunchedEffect(id, area, path) {
         loading = true
         loadError = null
         runCatching {
-            repository.readTextForPreview(id, area, path)
+            if (editable) {
+                val document = repository.readEditorDocument(id, path)
+                original = document
+                pendingDraft = drafts.read()
+                document.text
+            } else repository.readTextForPreview(id, area, path)
         }.onSuccess { content ->
             textState.setTextAndPlaceCursorAtEnd(content)
             loading = false
         }.onFailure {
+            if (it is CancellationException) throw it
             loadError = it.message ?: "读取文件失败"
             loading = false
         }
+    }
+
+    pendingDraft?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { pendingDraft = null },
+            title = { Text("发现本地草稿") },
+            text = { Text(if (draft.revision == original?.revision) "恢复上次保留的编辑内容？" else "远端文件已变化。可恢复草稿查看和复制，但保存会被冲突保护阻止，不会直接覆盖远端。") },
+            confirmButton = { TextButton(onClick = {
+                original = original?.copy(revision = draft.revision)
+                textState.setTextAndPlaceCursorAtEnd(draft.text)
+                showPreview = false
+                pendingDraft = null
+            }) { Text("恢复草稿") } },
+            dismissButton = { TextButton(onClick = { pendingDraft = null }) { Text("使用远端内容") } },
+        )
+    }
+    if (confirmLeave) {
+        AlertDialog(
+            onDismissRequest = { if (!saving) confirmLeave = false },
+            title = { Text("有未保存的修改") },
+            text = { Text("可保留本地草稿后离开，不会写入远端文件。") },
+            confirmButton = { TextButton(enabled = !saving, onClick = {
+                val document = original ?: return@TextButton
+                val edited = textState.text.toString()
+                saving = true
+                scope.launch {
+                    try {
+                        drafts.save(WorkspaceEditorDraft(document.revision, edited))
+                        confirmLeave = false
+                        navController.popBackStack()
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { toaster.show(e.message ?: "草稿保存失败", type = ToastType.Error) }
+                    finally { saving = false }
+                }
+            }) { Text("保留草稿并返回") } },
+            dismissButton = { TextButton(enabled = !saving, onClick = { confirmLeave = false }) { Text("继续编辑") } },
+        )
     }
 
     Scaffold(
@@ -91,7 +152,7 @@ fun WorkspaceFileEditorPage(
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
-                navigationIcon = { BackButton() },
+                navigationIcon = { TextButton(enabled = !saving, onClick = ::leave) { Text("返回") } },
                 actions = {
                     if (supportsPreview && !loading && loadError == null) {
                         TextButton(onClick = { showPreview = !showPreview }) {
@@ -102,21 +163,23 @@ fun WorkspaceFileEditorPage(
                         TextButton(
                             onClick = {
                                 if (saving) return@TextButton
+                                val document = original ?: return@TextButton
+                                val edited = textState.text.toString()
                                 saving = true
                                 scope.launch {
-                                    runCatching {
-                                        repository.writeText(
-                                            id = id,
-                                            path = path,
-                                            text = textState.text.toString(),
-                                            overwrite = true,
-                                        )
-                                    }.onSuccess {
+                                    try {
+                                        // Persist recovery content before the network write, including uncertain failures.
+                                        drafts.save(WorkspaceEditorDraft(document.revision, edited))
+                                        val saved = repository.saveEditorDocument(id, path, document, edited)
+                                        original = saved
+                                        textState.setTextAndPlaceCursorAtEnd(saved.text)
+                                        drafts.clear()
                                         toaster.show("已保存", type = ToastType.Success)
-                                    }.onFailure {
-                                        toaster.show(it.message ?: "保存失败", type = ToastType.Error)
-                                    }
-                                    saving = false
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        toaster.show(e.message ?: "保存失败，草稿已保留", type = ToastType.Error)
+                                    } finally { saving = false }
                                 }
                             },
                             enabled = !saving,
@@ -164,7 +227,7 @@ fun WorkspaceFileEditorPage(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .imePadding(),
-                readOnly = !editable,
+                readOnly = !editable || saving,
                 lineLimits = TextFieldLineLimits.MultiLine(),
                 textStyle = LocalTextStyle.current.copy(
                     fontFamily = JetbrainsMono,

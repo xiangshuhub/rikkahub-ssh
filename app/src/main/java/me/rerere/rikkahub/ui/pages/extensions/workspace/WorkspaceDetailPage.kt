@@ -150,14 +150,15 @@ private enum class WorkspaceDetailTab(
 }
 
 @Composable
-fun WorkspaceDetailPage(id: String) {
+fun WorkspaceDetailPage(id: String, openFiles: Boolean = false, cwd: String = "") {
     val navController = LocalNavController.current
     val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val state by vm.state.collectAsStateWithLifecycle()
     val installProgress by vm.installProgress.collectAsStateWithLifecycle()
     val installError by vm.installError.collectAsStateWithLifecycle()
     val settingsError by vm.settingsError.collectAsStateWithLifecycle()
-    val pagerState = rememberPagerState { WorkspaceDetailTab.entries.size }
+    val pagerState = rememberPagerState(initialPage = if (openFiles) WorkspaceDetailTab.FILES.ordinal else 0) { WorkspaceDetailTab.entries.size }
+    LaunchedEffect(id, cwd) { if (openFiles) vm.openInitialDirectory(cwd) }
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
@@ -188,6 +189,16 @@ fun WorkspaceDetailPage(id: String) {
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
         vm.exportFilesToDirectory(uri, context.contentResolver)
+    }
+
+    var createDirectory by remember { mutableStateOf<Boolean?>(null) }
+    var createParent by remember { mutableStateOf("") }
+    createDirectory?.let { directory ->
+        WorkspaceCreateEntryDialog(
+            directory = directory,
+            onCreate = { name -> vm.createEntry(createParent, name, directory) },
+            onDismiss = { createDirectory = null },
+        )
     }
 
     val onFilesTab = pagerState.currentPage == WorkspaceDetailTab.FILES.ordinal
@@ -242,6 +253,22 @@ fun WorkspaceDetailPage(id: String) {
                 modifier = Modifier.padding(vertical = 4.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp),
             )
+
+            if (onFilesTab && state.area == WorkspaceStorageArea.FILES) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(enabled = state.workspace != null && !state.loading, onClick = {
+                        createParent = state.path
+                        createDirectory = false
+                    }) { Text(stringResource(R.string.workspace_new_file)) }
+                    TextButton(enabled = state.workspace != null && !state.loading, onClick = {
+                        createParent = state.path
+                        createDirectory = true
+                    }) { Text(stringResource(R.string.workspace_new_folder)) }
+                }
+            }
 
             HorizontalPager(
                 state = pagerState,

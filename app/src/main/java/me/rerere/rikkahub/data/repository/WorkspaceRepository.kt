@@ -46,6 +46,8 @@ class WorkspaceRepository(
     private val settingsStore: SettingsStore,
     private val sshPool: SshConnectionPool,
 ) {
+    private val toolMutationMutex = kotlinx.coroutines.sync.Mutex()
+
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
     suspend fun checkIntegrity() = withContext(Dispatchers.IO) {
@@ -228,6 +230,56 @@ class WorkspaceRepository(
         path: String,
     ): String = readFromBackend(id) { it.readText(path) }
 
+    suspend fun readToolDocument(id: String, path: String): me.rerere.workspace.ssh.SshTextDocument =
+        readFromBackend(id) { it.toolDocument(path) }
+
+    suspend fun writeToolDocument(id: String, path: String, text: String, expectedRevision: String): me.rerere.workspace.ssh.SshTextDocument {
+        toolMutationMutex.lock()
+        try {
+            return withBackend(id) { backend ->
+                if (backend is SshWorkspaceBackend) backend.writeToolDocument(path, text, expectedRevision)
+                else {
+                    if (expectedRevision != "new") check(backend.toolDocument(path).revision == expectedRevision) {
+                        "File changed; read again before writing. Nothing saved."
+                    }
+                    backend.writeAbsoluteText(path, text, overwrite = expectedRevision != "new")
+                    me.rerere.workspace.ssh.SshTextDocument(text, me.rerere.workspace.ssh.textRevision(text.toByteArray(Charsets.UTF_8)))
+                }
+            }
+        } finally { toolMutationMutex.unlock() }
+    }
+
+    private fun WorkspaceBackend.toolDocument(path: String): me.rerere.workspace.ssh.SshTextDocument {
+        if (this is SshWorkspaceBackend) return readToolDocument(path)
+        val limit = 8 * 1024 * 1024
+        require(absoluteFileSize(path) <= limit) { "File too large; use shell to inspect bounded sections" }
+        val buffer = ByteArrayOutputStream()
+        exportAbsoluteFile(path, object : OutputStream() {
+            override fun write(value: Int) { require(buffer.size() < limit); buffer.write(value) }
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                require(buffer.size().toLong() + length <= limit); buffer.write(bytes, offset, length)
+            }
+        })
+        val bytes = buffer.toByteArray()
+        return me.rerere.workspace.ssh.SshTextDocument(bytes.toString(Charsets.UTF_8), me.rerere.workspace.ssh.textRevision(bytes))
+    }
+
+    suspend fun readEditorDocument(id: String, path: String): me.rerere.workspace.ssh.SshTextDocument =
+        readFromBackend(id) { backend ->
+            if (backend is SshWorkspaceBackend) backend.readEditorDocument(path)
+            else me.rerere.workspace.ssh.decodeSshText(backend.readText(path).toByteArray(Charsets.UTF_8))
+        }
+
+    suspend fun saveEditorDocument(id: String, path: String, original: me.rerere.workspace.ssh.SshTextDocument, text: String): me.rerere.workspace.ssh.SshTextDocument =
+        withBackend(id) { backend ->
+            if (backend is SshWorkspaceBackend) backend.saveEditorDocument(path, original, text)
+            else {
+                check(backend.readText(path) == original.text) { "文件已被其他程序修改，未覆盖。请保留草稿并重新打开文件。" }
+                backend.writeText(path, text, overwrite = true)
+                me.rerere.workspace.ssh.decodeSshText(text.toByteArray(Charsets.UTF_8))
+            }
+        }
+
     suspend fun writeText(
         id: String,
         path: String,
@@ -332,6 +384,16 @@ class WorkspaceRepository(
         backendOf(workspace).deleteFile(area, path, recursive)
     }
 
+    /** Create a child in the current FILES directory without overwriting an existing entry. */
+    suspend fun createEntry(id: String, parent: String, name: String, directory: Boolean) {
+        val command = me.rerere.workspace.workspaceCreateEntryCommand(name, directory)
+        val result = executeCommand(id, command, cwd = parent, timeoutMillis = 20_000)
+        check(!result.timedOut) { "创建结果未知，请刷新目录核验后再操作；未自动重试。" }
+        check(result.exitCode == 0) {
+            "创建失败（可能同名项目已存在或没有写入权限）：${result.stderr.take(500)}"
+        }
+    }
+
     suspend fun executeCommand(
         id: String,
         command: String,
@@ -372,10 +434,10 @@ class WorkspaceRepository(
     }
 
     /** 打开 SSH 工作区的交互式 shell, 阻塞到连接和 shell 都建立好, 不能在主线程调用 */
-    fun openSshShell(workspace: WorkspaceEntity, columns: Int, rows: Int): SshShell {
+    fun openSshShell(workspace: WorkspaceEntity, columns: Int, rows: Int, startupCommand: String? = null, cwd: String = ""): SshShell {
         val backend = backendOf(workspace) as? SshWorkspaceBackend
             ?: error("Not an SSH workspace: ${workspace.id}")
-        return backend.openShell(columns, rows)
+        return backend.openShell(columns, rows, startupCommand, cwd)
     }
 
     private fun backendOf(workspace: WorkspaceEntity): WorkspaceBackend =

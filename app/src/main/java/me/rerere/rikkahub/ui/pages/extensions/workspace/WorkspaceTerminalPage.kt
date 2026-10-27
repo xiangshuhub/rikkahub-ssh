@@ -65,7 +65,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 @Composable
-fun WorkspaceTerminalPage(id: String) {
+fun WorkspaceTerminalPage(id: String, cwd: String = "") {
     val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val state by vm.state.collectAsStateWithLifecycle()
     val sessionManager: WorkspaceTerminalSessionManager = koinInject()
@@ -79,18 +79,41 @@ fun WorkspaceTerminalPage(id: String) {
     )
     var pendingCloseTabId by remember(root) { mutableStateOf<Long?>(null) }
 
+    var showTmux by remember(root) { mutableStateOf(false) }
     val shellCompatibilityMode = workspace?.shellCompatibilityMode ?: false
     LaunchedEffect(root, shellCompatibilityMode) {
-        workspace?.let(sessionManager::ensureSession)
+        workspace?.let {
+            if (it.isSsh()) {
+                if (terminalState.tabs.none { tab -> !tab.finished }) showTmux = true
+            } else sessionManager.ensureSession(it)
+        }
+    }
+    if (showTmux && workspace != null) {
+        WorkspaceTmuxDialog(
+            workspace = workspace,
+            cwd = cwd,
+            onAttach = { command, label ->
+                sessionManager.createTab(workspace, command, cwd, label)
+                showTmux = false
+            },
+            onPlain = { sessionManager.createTab(workspace, cwd = cwd); showTmux = false },
+            onDismiss = { showTmux = false },
+        )
     }
 
     RikkahubTheme(colorMode = ColorMode.DARK) {
         Scaffold { innerPadding ->
             WorkspaceTerminalContent(
                 root = root,
-                state = terminalState,
+                state = if (workspace?.isSsh() == true && terminalState.readiness == WorkspaceTerminalReadiness.Loading)
+                    terminalState.copy(readiness = WorkspaceTerminalReadiness.Ready) else terminalState,
+                workspaceLabel = workspace?.let { ws ->
+                    ws.sshSettings()?.let { "${ws.name} · ${it.username}@${it.host}:${it.port}" } ?: ws.name
+                }.orEmpty(),
                 contentPadding = innerPadding,
-                onCreateTab = { workspace?.let(sessionManager::createTab) },
+                onCreateTab = { workspace?.let {
+                    if (it.isSsh()) showTmux = true else sessionManager.createTab(it)
+                } },
                 onSelectTab = { tabId ->
                     root?.let { sessionManager.selectTab(it, tabId) }
                 },
@@ -113,7 +136,8 @@ fun WorkspaceTerminalPage(id: String) {
                     )
                 },
                 text = {
-                    Text(stringResource(R.string.workspace_terminal_close_confirm_message))
+                    Text(if (pendingCloseTab.tmuxLabel != null) "仅断开本地终端；远端 tmux 会话及其中程序继续运行。"
+                        else stringResource(R.string.workspace_terminal_close_confirm_message))
                 },
                 confirmButton = {
                     TextButton(
@@ -140,6 +164,7 @@ fun WorkspaceTerminalPage(id: String) {
 private fun WorkspaceTerminalContent(
     root: String?,
     state: WorkspaceTerminalTabsState,
+    workspaceLabel: String,
     contentPadding: PaddingValues,
     onCreateTab: () -> Unit,
     onSelectTab: (Long) -> Unit,
@@ -161,6 +186,8 @@ private fun WorkspaceTerminalContent(
         color = Color.Black,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            Text(workspaceLabel, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -183,7 +210,7 @@ private fun WorkspaceTerminalContent(
                                     R.string.workspace_terminal_tab,
                                     tab.number,
                                 )
-                                val tabTitle = tab.title ?: tabDescription
+                                val tabTitle = tab.tmuxLabel?.let { "tmux: $it" } ?: tab.title ?: tabDescription
                                 val isSelected = selectedTab.id == tab.id
                                 Tab(
                                     selected = isSelected,

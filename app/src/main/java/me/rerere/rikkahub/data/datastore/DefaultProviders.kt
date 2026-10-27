@@ -8,6 +8,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.QuotaQuery
 import me.rerere.rikkahub.R
@@ -16,6 +18,9 @@ import kotlin.uuid.Uuid
 
 val DEFAULT_AUTO_MODEL_ID = Uuid.parse("b7055fb4-39f9-4042-a88a-0d80ed76cf08")
 
+val DEFAULT_CODEX_PROVIDER_ID = Uuid.parse("7ce7e322-b995-4b0c-9d48-42e08dcfcdda")
+val DEFAULT_GROK_PROVIDER_ID = Uuid.parse("8f3e1d20-4b6a-4c9e-a1f2-9d5c7e0b3a44")
+
 val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.OpenAI(
         id = Uuid.parse("1eeea727-9ee5-4cae-93e6-6fb01a4d051e"),
@@ -23,6 +28,59 @@ val DEFAULT_PROVIDERS = listOf(
         baseUrl = "https://api.openai.com/v1",
         apiKey = "",
         builtIn = true
+    ),
+    ProviderSetting.ChatGPT(
+        id = DEFAULT_CODEX_PROVIDER_ID,
+        name = "Codex",
+        enabled = false,
+        builtIn = true,
+    ),
+    ProviderSetting.Grok(
+        id = DEFAULT_GROK_PROVIDER_ID,
+        name = "Grok",
+        enabled = false,
+        builtIn = true,
+    ),
+    // https://opencode.ai/docs/zen — keep each endpoint's protocol separate.
+    // API keys are configured independently; these are not OpenCode Go subscriptions.
+    ProviderSetting.Claude(
+        id = Uuid.parse("ae5ccf46-e18b-4d25-820a-a19ef1100002"),
+        name = "OpenCode Zen · Claude",
+        baseUrl = "https://opencode.ai/inference/anthropic/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true,
+        models = listOf(
+            Model(
+                id = Uuid.parse("ae5ccf46-e18b-4d25-820a-a19ef1100012"),
+                modelId = "claude-haiku-5-5",
+                displayName = "Claude Haiku 5.5",
+                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            ),
+        ),
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("ae5ccf46-e18b-4d25-820a-a19ef1100003"),
+        name = "OpenCode Zen · Responses",
+        baseUrl = "https://opencode.ai/inference/openai/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true,
+        useResponseApi = true,
+        models = listOf(
+            Model(
+                id = Uuid.parse("ae5ccf46-e18b-4d25-820a-a19ef1100013"),
+                modelId = "deepseek-v4.1-flash",
+                displayName = "DeepSeek V4.1 Flash",
+                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            ),
+            Model(
+                id = Uuid.parse("ae5ccf46-e18b-4d25-820a-a19ef1100014"),
+                modelId = "glm-5.3-flash",
+                displayName = "GLM 5.3 Flash",
+                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            ),
+        ),
     ),
     ProviderSetting.Google(
         id = Uuid.parse("6ab18148-c138-4394-a46f-1cd8c8ceaa6d"),

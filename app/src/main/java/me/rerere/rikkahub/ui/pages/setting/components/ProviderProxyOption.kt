@@ -15,13 +15,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.testSocks5Connection
+import java.net.SocketTimeoutException
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.Socks5ProxyException
 import me.rerere.ai.provider.Socks5Stage
-import me.rerere.ai.util.HttpException
 import me.rerere.rikkahub.R
-import org.koin.compose.koinInject
 
 @Composable
 fun ProviderProxyOption(provider: ProviderSetting, onEdit: (ProviderSetting) -> Unit) {
@@ -30,7 +29,6 @@ fun ProviderProxyOption(provider: ProviderSetting, onEdit: (ProviderSetting) -> 
     var testing by remember { mutableStateOf(false) }
     var result by remember(provider.id, draft, port) { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
-    val manager = koinInject<ProviderManager>()
     val candidate = draft.copy(port = port.toIntOrNull() ?: 0)
     val valid = runCatching { candidate.validate() }.isSuccess
 
@@ -73,13 +71,13 @@ fun ProviderProxyOption(provider: ProviderSetting, onEdit: (ProviderSetting) -> 
                 onEdit(provider.withProxy(if (valid) candidate else provider.proxy.copy(enabled = false)))
                 result = R.string.setting_provider_page_save_success
             }) { Text(stringResource(R.string.assistant_page_save)) }
-            OutlinedButton(enabled = !testing && (!draft.enabled || valid), onClick = {
+            OutlinedButton(enabled = !testing && valid, onClick = {
                 testing = true
                 result = null
-                val snapshot = provider.withProxy(candidate)
+                val snapshot = candidate
                 scope.launch {
                     try {
-                        withTimeout(30_000) { manager.testConnection(snapshot) }
+                        withTimeout(15_000) { testSocks5Connection(snapshot) }
                         result = R.string.provider_proxy_test_success
                     } catch (_: TimeoutCancellationException) {
                         result = R.string.provider_proxy_test_timeout
@@ -89,11 +87,9 @@ fun ProviderProxyOption(provider: ProviderSetting, onEdit: (ProviderSetting) -> 
                         val causes = generateSequence<Throwable>(e) { it.cause }.take(10).toList()
                         val socks = causes.filterIsInstance<Socks5ProxyException>().firstOrNull()
                         result = when {
+                            causes.any { it is SocketTimeoutException } -> R.string.provider_proxy_test_timeout
                             socks?.stage == Socks5Stage.AUTH -> R.string.provider_proxy_test_auth
-                            socks?.stage == Socks5Stage.TARGET -> R.string.provider_proxy_test_target
-                            socks != null -> R.string.provider_proxy_test_connect
-                            causes.any { it is HttpException } -> R.string.provider_proxy_test_api
-                            else -> R.string.provider_proxy_test_failed
+                            else -> R.string.provider_proxy_test_connect
                         }
                     } finally { testing = false }
                 }

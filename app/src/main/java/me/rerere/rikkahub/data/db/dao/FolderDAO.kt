@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.db.dao
 
+import me.rerere.rikkahub.data.model.CHAT_ASSISTANT_HISTORY_FILTER
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -11,7 +12,7 @@ import me.rerere.rikkahub.data.db.entity.FolderEntity
 
 @Dao
 interface FolderDAO {
-    @Query("SELECT * FROM conversation_folder WHERE assistant_id = :assistantId ORDER BY sort_index ASC, create_at ASC")
+    @Query("SELECT * FROM conversation_folder WHERE " + CHAT_ASSISTANT_HISTORY_FILTER + " ORDER BY sort_index ASC, create_at ASC")
     fun getFoldersOfAssistant(assistantId: String): Flow<List<FolderEntity>>
 
     @Query("SELECT * FROM conversation_folder WHERE id = :id")

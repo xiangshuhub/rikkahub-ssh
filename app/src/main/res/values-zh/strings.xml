@@ -1813,7 +1813,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="fork_donation_saved">收款码已保存</string>
   <string name="fork_donation_save_failed">保存失败，请选择其他位置后重试</string>
   <string name="management_assistant_enable">启用应用管理能力</string>
-  <string name="management_assistant_description">内置专用管理助手：仅管理助手配置、工作空间绑定、Skill 和 MCP 配置。所有修改仍须逐次确认。停用对已有会话同样生效，复制的助手不继承管理权限。</string>
+  <string name="management_assistant_description">内置管理助手：可按明确的空间 ID 读取 SSH 文件、执行 Shell，并管理助手、绑定、Skill 和 MCP 配置。不自动连接全部空间。SSH 工具沿用全局及空间审批规则，应用配置修改仍须逐次确认。停用对已有会话同样生效，副本不继承管理权限。</string>
   <string name="setting_page_workspaces_desc">管理本地与 SSH 工作空间、文件和终端</string>
   <string name="provider_quota_view_website">到官网查看余额</string>
   <string name="provider_quota_opencode_notice">OpenCode Zen 暂未提供已公开的 API Key 余额查询接口，默认 /credits 查询不受支持。请登录官方控制台查看余额，不影响模型调用。如有可用的自定义查询地址，仍可在下方配置。</string>
@@ -1827,7 +1827,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_assistant_configure">配置助手</string>
   <string name="workspace_assistant_done">完成</string>
   <string name="provider_proxy_title">代理</string>
-  <string name="provider_proxy_description">仅为此供应商设置网络路径。默认关闭，SOCKS5 预填 127.0.0.1:10808，可自行修改；保存后对新请求生效。</string>
+  <string name="provider_proxy_description">仅为此供应商设置网络路径。默认关闭，SOCKS5 预填 127.0.0.1:10808，可自行修改；保存后对新请求生效。测试只检查上方代理地址，不会启用代理或自动保存配置。</string>
   <string name="provider_proxy_default">默认网络（仍可能经过 VPN）</string>
   <string name="provider_proxy_socks5">启用 SOCKS5</string>
   <string name="provider_proxy_host">代理地址</string>
@@ -1837,11 +1837,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="provider_proxy_invalid">请输入有效地址和端口（1–65535）。用户名和密码须同时留空，或同时填写且各为 1–255 个 UTF-8 字节。</string>
   <string name="provider_proxy_notice">请先启动本机代理客户端。目标域名由代理解析，失败不自动直连。适用于供应商 API 及应用内账号令牌交换、刷新，不影响浏览器登录网页、SSH 或 MCP。SOCKS5 本身不加密代理密码，建议连接可信的本机代理。分享供应商时不携带代理设置；设置备份包含代理凭据，请像保护 API Key 一样保管备份。</string>
   <string name="provider_proxy_test">测试连接</string>
-  <string name="provider_proxy_test_success">已按上方配置成功请求模型列表；测试不会自动保存设置。</string>
-  <string name="provider_proxy_test_timeout">测试超时，请检查代理客户端及目标线路。</string>
+  <string name="provider_proxy_test_success">SOCKS5 代理连接成功；未测试境外节点或供应商接口。</string>
+  <string name="provider_proxy_test_timeout">SOCKS5 连接或协商超时，请检查代理地址、端口及客户端状态。</string>
   <string name="provider_proxy_test_auth">SOCKS5 认证被拒绝，请检查代理用户名、密码及认证方式。</string>
-  <string name="provider_proxy_test_target">代理无法连接目标，请检查节点、DNS 和分流设置。</string>
   <string name="provider_proxy_test_connect">无法连接或无法完成 SOCKS5 协商，请检查地址、端口及代理客户端是否启动。</string>
-  <string name="provider_proxy_test_api">供应商返回 API 错误，请检查接口地址、密钥及权限；不一定是代理故障。</string>
-  <string name="provider_proxy_test_failed">请求失败，请检查供应商地址、凭据、网络与 TLS 配置。</string>
 </resources>

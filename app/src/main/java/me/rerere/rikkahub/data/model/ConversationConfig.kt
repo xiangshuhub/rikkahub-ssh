@@ -94,6 +94,7 @@ fun Assistant.withoutConversationFields(conversation: Conversation, stored: Assi
 /** 会话所属助手自身的设置，不含会话上固定的配置；助手被删除后退回当前助手。 */
 fun Settings.getStoredAssistantOf(conversation: Conversation): Assistant =
     getAssistantById(conversation.assistantId)
+        ?: retiredAssistantProfiles.firstOrNull { it.id == conversation.assistantId }
         ?: getCurrentAssistant().takeUnless { it.isAppManagementAssistant }
         ?: getAssistantById(me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID)
         ?: Assistant() // A deleted ordinary assistant must never inherit the currently selected manager's role.

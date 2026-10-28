@@ -1,5 +1,10 @@
 package me.rerere.ai.provider
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -31,6 +36,26 @@ fun OkHttpClient.withProviderProxy(config: ProviderProxy): OkHttpClient {
         .build()
 }
 
+/** Tests the supplied proxy endpoint even if the unsaved enable switch is off. No CONNECT request,
+ * destination DNS, HTTP request, API key or account token is involved.
+ */
+suspend fun testSocks5Connection(config: ProviderProxy, timeoutMillis: Int = 10_000) {
+    config.validate()
+    require(timeoutMillis > 0)
+    withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val socket = Socks5Socket(config)
+            continuation.invokeOnCancellation { runCatching { socket.close() } }
+            try {
+                socket.use { it.connectProxyOnly(timeoutMillis) }
+                continuation.resume(Unit)
+            } catch (e: Exception) {
+                continuation.resumeWithException(e)
+            }
+        }
+    }
+}
+
 enum class Socks5Stage { CONNECT, HANDSHAKE, AUTH, TARGET }
 class Socks5ProxyException(val stage: Socks5Stage, cause: Exception) : IOException("SOCKS5 $stage failed", cause)
 
@@ -54,6 +79,12 @@ private class Socks5Socket(private val config: ProviderProxy) : Socket(Proxy.NO_
 
     override fun connect(endpoint: SocketAddress, timeout: Int) {
         require(endpoint is InetSocketAddress)
+        connectThroughProxy(endpoint, timeout)
+    }
+
+    fun connectProxyOnly(timeout: Int) = connectThroughProxy(null, timeout)
+
+    private fun connectThroughProxy(endpoint: InetSocketAddress?, timeout: Int) {
         val oldTimeout = soTimeout
         val budget = if (timeout > 0) timeout else 10_000
         val deadline = System.nanoTime() + budget * 1_000_000L
@@ -83,6 +114,10 @@ private class Socks5Socket(private val config: ProviderProxy) : Socket(Proxy.NO_
                 output.write(byteArrayOf(1, user.size.toByte()) + user + byteArrayOf(pass.size.toByte()) + pass)
                 output.flush()
                 if (readByte() != 1 || readByte() != 0) throw IOException("SOCKS5 authentication failed")
+            }
+            if (endpoint == null) {
+                soTimeout = oldTimeout
+                return // Probe ends after greeting/authentication, before sending a destination.
             }
             stage = Socks5Stage.TARGET
             val host = endpoint.hostString.removeSurrounding("[", "]")

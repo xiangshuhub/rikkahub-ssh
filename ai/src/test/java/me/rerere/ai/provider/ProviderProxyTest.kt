@@ -1,5 +1,11 @@
 package me.rerere.ai.provider
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import java.util.concurrent.CountDownLatch
 import kotlinx.serialization.json.Json
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -120,6 +126,53 @@ class ProviderProxyTest {
         }
     }
 
+    @Test fun `proxy probe checks greeting only even when enable switch is off`() = runTest {
+        FakeSocks(probeOnly = true).use { proxy ->
+            testSocks5Connection(proxy.config().copy(enabled = false))
+            proxy.await() // Server asserts EOF immediately after negotiation: no CONNECT or HTTP bytes.
+            assertNull(proxy.target)
+            assertEquals("", proxy.httpHeaders)
+        }
+    }
+
+    @Test fun `proxy probe authenticates without contacting a destination`() = runTest {
+        FakeSocks(auth = true, probeOnly = true).use { proxy ->
+            testSocks5Connection(proxy.config().copy(username = "user", password = "pass"))
+            proxy.await()
+            assertEquals("user", proxy.username)
+            assertEquals("pass", proxy.password)
+            assertNull(proxy.target)
+        }
+        FakeSocks(auth = true, rejectAuth = true).use { proxy ->
+            val error = runCatching { testSocks5Connection(proxy.config().copy(username = "user", password = "bad")) }.exceptionOrNull()
+            assertEquals(Socks5Stage.AUTH, (error as Socks5ProxyException).stage)
+            proxy.await()
+        }
+    }
+
+    @Test fun `proxy probe rejects other protocols and times out on stalled greeting`() = runTest {
+        FakeSocks(greetingVersion = 4).use { proxy ->
+            val error = runCatching { testSocks5Connection(proxy.config()) }.exceptionOrNull()
+            assertEquals(Socks5Stage.HANDSHAKE, (error as Socks5ProxyException).stage)
+            proxy.await()
+        }
+        FakeSocks(stallGreeting = true).use { proxy ->
+            val error = runCatching { testSocks5Connection(proxy.config(), timeoutMillis = 200) }.exceptionOrNull()
+            assertTrue(error is Socks5ProxyException && error.cause is SocketTimeoutException)
+            proxy.await()
+        }
+    }
+
+    @Test fun `cancelling a proxy probe closes the socket during negotiation`() = runTest {
+        FakeSocks(stallGreeting = true).use { proxy ->
+            val job = launch(Dispatchers.Default) { testSocks5Connection(proxy.config()) }
+            withContext(Dispatchers.IO) { assertTrue(proxy.greeting.await(2, TimeUnit.SECONDS)) }
+            job.cancelAndJoin()
+            assertTrue(job.isCancelled)
+            proxy.await()
+        }
+    }
+
     @Test fun `manager isolates suppliers and rebuilds transport when settings change`() {
         val manager = ProviderManager(base(), null, AccountCredentialProvider { _, _ -> error("No account request expected") })
         val first = ProviderSetting.OpenAI(proxy = ProviderProxy(enabled = true))
@@ -149,7 +202,11 @@ class ProviderProxyTest {
         private val rejectAuth: Boolean = false,
         private val rejectTarget: Boolean = false,
         private val tls: HandshakeCertificates? = null,
+        private val probeOnly: Boolean = false,
+        private val greetingVersion: Int = 5,
+        private val stallGreeting: Boolean = false,
     ) : AutoCloseable {
+        val greeting = CountDownLatch(1)
         private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).apply { soTimeout = 5000 }
         private val executor = Executors.newSingleThreadExecutor()
         @Volatile var target: String? = null
@@ -167,13 +224,26 @@ class ProviderProxyTest {
                 assertEquals(5, byte())
                 assertEquals(1, byte())
                 assertEquals(if (auth) 2 else 0, byte())
-                output.write(byteArrayOf(5, if (auth) 2 else 0)); output.flush()
+                greeting.countDown()
+                if (stallGreeting) {
+                    assertEquals(-1, input.read()) // Timeout/cancellation must close the socket.
+                    return@submit
+                }
+                output.write(byteArrayOf(greetingVersion.toByte(), if (auth) 2 else 0)); output.flush()
+                if (greetingVersion != 5) {
+                    assertEquals(-1, input.read())
+                    return@submit
+                }
                 if (auth) {
                     assertEquals(1, byte())
                     username = text(byte())
                     password = text(byte())
                     output.write(byteArrayOf(1, if (rejectAuth) 1 else 0)); output.flush()
                     if (rejectAuth) return@submit
+                }
+                if (probeOnly) {
+                    assertEquals(-1, input.read()) // No target CONNECT, HTTP, or provider credentials.
+                    return@submit
                 }
                 assertEquals(5, byte()); assertEquals(1, byte()); assertEquals(0, byte())
                 assertEquals(3, byte())

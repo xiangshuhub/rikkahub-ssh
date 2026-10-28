@@ -38,6 +38,8 @@ class AssistantVM(
     }
 
     fun removeAssistant(assistant: Assistant) {
+        if (assistant.id in me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS ||
+            assistant.id in me.rerere.rikkahub.data.model.RETIRED_ASSISTANT_IDS) return
         viewModelScope.launch {
             cleanupAssistantFiles(assistant)
 

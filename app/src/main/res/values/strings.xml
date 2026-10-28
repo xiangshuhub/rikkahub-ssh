@@ -1811,7 +1811,7 @@
   <string name="fork_donation_saved">Payment QR code saved</string>
   <string name="fork_donation_save_failed">Could not save image. Please choose another location.</string>
   <string name="management_assistant_enable">Enable application management</string>
-  <string name="management_assistant_description">Built-in management assistant: assistant profiles, workspace bindings, Skills and MCP configuration only. All changes require individual confirmation. Disabling takes effect for existing chats too. Copies do not inherit management access.</string>
+  <string name="management_assistant_description">Built-in manager: inspect SSH files and run shell commands using an explicit workspace ID, and manage assistants, bindings, Skills and MCP configuration. Does not connect all workspaces automatically. SSH follows global/workspace approval rules; application configuration changes still require confirmation. Disabling affects existing chats too. Copies do not inherit management access.</string>
   <string name="setting_page_workspaces_desc">Manage local and SSH workspaces, files and terminals</string>
   <string name="provider_quota_view_website">View balance on website</string>
   <string name="provider_quota_opencode_notice">OpenCode Zen does not currently offer a documented API-key balance endpoint. The default /credits query is not supported. Check your balance in the official console; model requests are unaffected. Custom query URLs remain available.</string>
@@ -1825,7 +1825,7 @@
   <string name="workspace_assistant_configure">Configure assistant</string>
   <string name="workspace_assistant_done">Done</string>
   <string name="provider_proxy_title">Proxy</string>
-  <string name="provider_proxy_description">A separate route for this provider. Off by default; SOCKS5 defaults to 127.0.0.1:10808. Edit and save to apply to new requests.</string>
+  <string name="provider_proxy_description">A separate route for this provider. Off by default; SOCKS5 defaults to 127.0.0.1:10808. Edit and save to apply to new requests. Testing checks only the proxy endpoint above; it does not enable or save the proxy.</string>
   <string name="provider_proxy_default">Default network (may use VPN)</string>
   <string name="provider_proxy_socks5">SOCKS5 enabled</string>
   <string name="provider_proxy_host">Proxy host</string>
@@ -1835,11 +1835,8 @@
   <string name="provider_proxy_invalid">Enter a valid host and port (1–65535). Leave both credentials empty, or fill both with 1–255 UTF-8 bytes each.</string>
   <string name="provider_proxy_notice">Start the local proxy client first. Destination DNS is resolved by the proxy; there is no automatic direct fallback. This covers provider API requests and in-app account token exchange/refresh, not external browser login pages, SSH or MCP. SOCKS5 does not encrypt proxy credentials: prefer a trusted local proxy. Proxy settings are excluded from provider sharing but included in settings backups; protect backups like API keys.</string>
   <string name="provider_proxy_test">Test connection</string>
-  <string name="provider_proxy_test_success">Model-list request succeeded using the settings above. Test changes are not saved automatically.</string>
-  <string name="provider_proxy_test_timeout">Test timed out. Check the proxy client and destination route.</string>
+  <string name="provider_proxy_test_success">SOCKS5 proxy connection succeeded. Upstream nodes and provider APIs were not tested.</string>
+  <string name="provider_proxy_test_timeout">SOCKS5 connection or negotiation timed out. Check the proxy host, port and client status.</string>
   <string name="provider_proxy_test_auth">SOCKS5 authentication rejected. Check the proxy username/password and supported authentication mode.</string>
-  <string name="provider_proxy_test_target">The proxy could not connect to the destination. Check its DNS, node and routing settings.</string>
   <string name="provider_proxy_test_connect">Could not connect to or negotiate with the SOCKS5 proxy. Check its host, port and whether the client is running.</string>
-  <string name="provider_proxy_test_api">The provider returned an API error. Check its address, credentials and permissions; this is not necessarily a proxy failure.</string>
-  <string name="provider_proxy_test_failed">Request failed. Check the provider URL, credentials, network and TLS configuration.</string>
 </resources>

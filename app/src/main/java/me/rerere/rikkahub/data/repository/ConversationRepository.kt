@@ -27,6 +27,8 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.model.assistantHistoryIds
+import me.rerere.rikkahub.data.model.visibleAssistantId
 
 class ConversationRepository(
     private val conversationDAO: ConversationDAO,
@@ -311,8 +313,8 @@ class ConversationRepository(
 
     suspend fun countConversationsByAssistant(): Map<Uuid, Int> {
         return conversationDAO.countByAssistant().mapNotNull { row ->
-            runCatching { Uuid.parse(row.assistantId) }.getOrNull()?.let { it to row.count }
-        }.toMap()
+            runCatching { Uuid.parse(row.assistantId) }.getOrNull()?.let { visibleAssistantId(it) to row.count }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, counts) -> counts.sum() }
     }
 
     suspend fun insertConversation(conversation: Conversation) {
@@ -358,11 +360,11 @@ class ConversationRepository(
         keyword: String,
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
         assistantId: Uuid? = null,
-    ) = messageFtsManager.search(keyword, sort, assistantId?.let { listOf(it.toString()) })
+    ) = messageFtsManager.search(keyword, sort, assistantId?.let(::assistantHistoryIds))
 
     /** 只在 [assistantIds] 这些助手的对话里搜索 */
     suspend fun searchMessagesOfAssistants(keyword: String, assistantIds: Set<Uuid>) =
-        messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
+        messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.flatMap(::assistantHistoryIds).distinct())
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()

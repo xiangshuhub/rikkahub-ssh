@@ -138,6 +138,7 @@ private val SAMPLE = Settings(
     assistantId = id(20),
     providers = listOf(ProviderSetting.OpenAI(id = id(31), name = "Provider")),
     assistants = listOf(Assistant(id = id(20), name = "Assistant")),
+    retiredAssistantProfiles = listOf(Assistant(id = me.rerere.rikkahub.data.model.RETIRED_ASSISTANT_IDS.first(), name = "Legacy profile")),
     assistantTags = listOf(Tag(id = id(7), name = "tag")),
     searchServices = listOf(
         SearchServiceOptions.BingLocalOptions(id = id(21)),
@@ -194,6 +195,7 @@ private val STORED_KEYS = setOf(
     "providers",
     "select_assistant",
     "assistants",
+    "retired_assistant_profiles",
     "assistant_tags",
     "search_services",
     "search_common",

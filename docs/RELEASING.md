@@ -1,6 +1,6 @@
 # 正式版发布
 
-当前版本：`v3.1.5`，`versionCode=198`（跳过 v3.1.4）（首个正式版为 `v3.1.2` / 195），应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
+当前版本：`v3.1.6`，`versionCode=199`（历史版本跳过 v3.1.4）（首个正式版为 `v3.1.2` / 195），应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
 
 ## 签名
 

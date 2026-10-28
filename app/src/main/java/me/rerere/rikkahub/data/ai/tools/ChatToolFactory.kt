@@ -3,6 +3,9 @@ package me.rerere.rikkahub.data.ai.tools
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.flow.first
+import me.rerere.rikkahub.data.model.appManagementCapabilities
+import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.model.isAppManagementAssistant
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.Tool
@@ -57,10 +60,24 @@ class ChatToolFactory(
         model: Model,
         workspaceCwd: String? = null,
     ): List<Tool> {
-        // Return early: never connect workspaces/MCP, load Skills or register ordinary tools for this role.
+        // Explicit manager capability set: no bound workspace, external MCP or activated Skills.
+        // Read local workspace metadata now; connect only when a routed SSH tool is actually invoked.
         if (assistant.isAppManagementAssistant) {
-            return AppManagementTools(context, settingsStore, skillManager, mcpManager, workspaceRepository,
+            val management = AppManagementTools(context, settingsStore, skillManager, mcpManager, workspaceRepository,
                 assistant, managementMutationMutex).tools()
+            val enabled: suspend () -> Boolean = {
+                "ssh_workspaces" in appManagementCapabilities(assistant, settingsStore.awaitLoaded())
+            }
+            if (!enabled()) return management
+            val overrides = workspaceRepository.listFlow().first().filter { it.isSsh() }
+                .associate { it.id to it.toolApprovalOverrides() }
+            val sshTools = createManagementSshTools(ToolApprovalPreferences(context).snapshot(), overrides, enabled) { id, name ->
+                val workspace = workspaceRepository.getById(id) ?: error("SSH workspace not found")
+                require(workspace.isSsh()) { "Only SSH workspaces can be selected" }
+                require(workspace.shellStatus == WorkspaceShellStatus.READY.name) { "SSH workspace is not ready" }
+                createWorkspaceTools(id, workspaceRepository).single { it.name == name }
+            }
+            return management + sshTools + localTools.getTools(listOf(LocalToolOption.AskUser))
         }
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val tools = buildList {

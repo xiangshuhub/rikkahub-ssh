@@ -13,9 +13,9 @@
 
 ## 发布状态
 
-当前正式版 **v3.1.5**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.5) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.5)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
+当前正式版 **v3.1.6**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.6) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.6)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
 
-v3.1.5 更新：供应商独立 SOCKS5 代理、SSH 同名专属助手、目录历史与书签、独立应用管理助手、工作空间入口优化、余额查询修正及工具授权简化。详见 [代理](docs/provider-proxy.md)、[工作空间助手](docs/workspace-assistant.md) 和 [文件浏览器](docs/workspace-browser.md) 文档。版本号跳过 v3.1.4；旧版可覆盖升级，升级前请备份。
+v3.1.6 更新：默认助手精简及旧配置/历史保留、应用管理助手按空间 ID 读取 SSH 文件和执行 Shell、代理测试改为仅验证 SOCKS5 协商与认证。v3.1.5 已提供供应商独立 SOCKS5 代理、SSH 同名专属助手、目录历史与书签等功能。详见 [代理](docs/provider-proxy.md)、[工作空间助手](docs/workspace-assistant.md) 和 [文件浏览器](docs/workspace-browser.md) 文档。版本号跳过 v3.1.4；旧版可覆盖升级，升级前请备份。
 
 | 构建 | 应用 ID |
 | --- | --- |
@@ -56,7 +56,8 @@ SSH 与本地工作空间均提供：`workspace_read_file`、`workspace_write_fi
 - Skill 查询、新建、编辑、删除；内置 Skill 只读，编辑保留附件，修改前备份。
 - MCP 列表、新建、删除；新建默认禁用，凭据、登录与启用由用户在设置中处理。
 - 助手工作空间绑定查询、绑定、切换、解绑；不创建/删除服务器或操作远端文件。
-- 管理助手仅拥有管理工具，不提供搜索、SSH/shell、Skill 执行、记忆或外部 MCP 工具。改名不影响身份，复制不继承管理权限。
+- 管理助手可按明确的工作空间 ID 读取 SSH 文件、执行 Shell，SSH 调用沿用全局及空间审批规则；应用配置修改仍需确认。不自动连接所有空间，不提供搜索、Skill 执行、记忆或外部 MCP 工具。改名不影响身份，复制不继承管理权限。
+- 默认仅保留不可删除的“聊天助手”和“应用管理助手”。升级时原来的两个默认助手不再显示，旧配置归档保留，旧会话/文件夹归入聊天助手的历史列表，实际会话身份和配置快照不改写。
 - 所有管理修改必须逐次确认，**全局自动批准不能绕过**；版本或影响范围变化后必须重新确认。
 - 助手配置修改仅影响全局配置和新对话，不自动改写当前聊天快照或切换正在执行的任务。
 

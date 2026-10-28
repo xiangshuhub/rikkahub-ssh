@@ -3,10 +3,14 @@ package me.rerere.rikkahub.data.datastore
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.effectiveQuotaQuery
 import me.rerere.rikkahub.data.model.managementOnly
+import me.rerere.rikkahub.data.model.retireOldBuiltIns
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
+import me.rerere.rikkahub.data.model.APP_MANAGEMENT_PROMPT
+import me.rerere.rikkahub.data.model.LEGACY_APP_MANAGEMENT_PROMPT
 
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
-    withBuiltInDefaults().withoutInvalidReferences().withValuesInRange()
+    retireOldBuiltIns().withBuiltInDefaults().withoutInvalidReferences().withValuesInRange()
 
 // 补齐缺失的内置提供商/助手/TTS，内置提供商的描述信息始终以代码里的为准
 internal fun Settings.withBuiltInDefaults(): Settings {
@@ -48,7 +52,11 @@ internal fun Settings.withBuiltInDefaults(): Settings {
     }
     return copy(
         providers = providers,
-        assistants = assistants.map { it.managementOnly() },
+        assistants = assistants.map {
+            val updated = if (it.isAppManagementAssistant && it.systemPrompt == LEGACY_APP_MANAGEMENT_PROMPT)
+                it.copy(systemPrompt = APP_MANAGEMENT_PROMPT) else it
+            updated.managementOnly()
+        },
         ttsProviders = ttsProviders,
     )
 }

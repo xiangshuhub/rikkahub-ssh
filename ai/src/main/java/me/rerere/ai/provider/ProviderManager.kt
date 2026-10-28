@@ -39,21 +39,6 @@ class ProviderManager(
         is ProviderSetting.Grok -> GrokProvider(transport, accountCredentials)
     } as Provider<T>
 
-    /** Uses a separate short-lived transport, including for unsaved form values. No generation charges. */
-    suspend fun testConnection(setting: ProviderSetting) {
-        val transport = client.newBuilder()
-            .connectionPool(okhttp3.ConnectionPool())
-            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .callTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .build().withProviderProxy(setting.proxy)
-        try {
-            createProvider(setting, transport).listModels(setting)
-        } finally {
-            transport.connectionPool.evictAll()
-        }
-    }
-
     /**
      * 注册Provider实例
      *

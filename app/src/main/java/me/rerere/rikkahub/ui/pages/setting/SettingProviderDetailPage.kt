@@ -138,6 +138,8 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConnectionTester
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderQuotaQuery
+import me.rerere.rikkahub.ui.pages.setting.components.ProviderProxyOption
+import me.rerere.hugeicons.stroke.Connect
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
@@ -155,7 +157,8 @@ private enum class ProviderDetailTab(
 ) : PagerTab {
     CONFIG(HugeIcons.Tools, R.string.setting_provider_page_configuration),
     MODELS(HugeIcons.Package01, R.string.setting_provider_page_models),
-    ADVANCED(HugeIcons.Settings03, R.string.setting_provider_page_advanced_settings);
+    ADVANCED(HugeIcons.Settings03, R.string.setting_provider_page_advanced_settings),
+    PROXY(HugeIcons.Connect, R.string.provider_proxy_title);
 
     override val label: String
         @Composable get() = stringResource(labelRes)
@@ -278,6 +281,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             onEdit = onEdit
                         )
                     }
+
+                    ProviderDetailTab.PROXY -> ProviderProxyOption(provider = provider, onEdit = onEdit)
 
                     ProviderDetailTab.ADVANCED -> {
                         SettingProviderAdvancedPage(

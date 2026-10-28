@@ -12,6 +12,25 @@ import kotlin.uuid.Uuid
 
 class ShareSheetTest {
     @Test
+    fun `sharing excludes proxy endpoint and credentials`() {
+        val original = ProviderSetting.OpenAI(proxy = me.rerere.ai.provider.ProviderProxy(
+            enabled = true, host = "private-proxy.example", username = "private-user", password = "private-password",
+        ))
+        val encoded = original.encodeForShare()
+        val json = kotlin.io.encoding.Base64.decode(encoded.removePrefix("ai-provider:v1:")).decodeToString()
+        assertTrue(!json.contains("private-proxy"))
+        assertTrue(!json.contains("private-password"))
+        assertEquals(me.rerere.ai.provider.ProviderProxy(), decodeProviderSetting(encoded).proxy)
+    }
+
+    @Test
+    fun `imported share cannot silently enable a proxy`() {
+        val json = """{"type":"openai","proxy":{"enabled":true,"host":"untrusted.example","port":10808,"username":"user","password":"pass"}}"""
+        val encoded = "ai-provider:v1:" + kotlin.io.encoding.Base64.encode(json.encodeToByteArray())
+        assertEquals(me.rerere.ai.provider.ProviderProxy(), decodeProviderSetting(encoded).proxy)
+    }
+
+    @Test
     fun `share round trip should restore OpenAI settings without models`() {
         val originalId = Uuid.random()
         val original = ProviderSetting.OpenAI(

@@ -27,14 +27,22 @@ fun renderQuotaTemplate(template: String, variable: (String) -> String?): String
 internal suspend fun OkHttpClient.runQuotaQuery(
     setting: ProviderSetting.ApiKey,
     nextApiKey: () -> String,
-): ProviderQuota.Balance? = withContext(Dispatchers.IO) {
-    val query = setting.quotaQuery.takeIf { it.enabled } ?: return@withContext null
+): ProviderQuota? = withContext(Dispatchers.IO) {
+    val query = setting.effectiveQuotaQuery.takeIf { it.enabled } ?: return@withContext null
+    if (setting.hasUnsupportedOpenCodeQuotaTemplate) {
+        // No request, no key selection and no browser credentials are needed for this fallback.
+        return@withContext ProviderQuota.Website(OPENCODE_CONSOLE_URL)
+    }
+    if (setting.hasUnsupportedSiliconFlowQuota) {
+        return@withContext ProviderQuota.Website(SILICONFLOW_CONSOLE_URL)
+    }
     // URL 和请求头引用的是同一个 key
     val apiKey by lazy(nextApiKey)
     val render = { template: String ->
         renderQuotaTemplate(template) { name ->
             when (name) {
                 QuotaQuery.VARIABLE_BASE_URL -> setting.baseUrl
+                QuotaQuery.VARIABLE_ORIGIN -> quotaOrigin(setting.baseUrl)
                 QuotaQuery.VARIABLE_API_KEY -> apiKey
                 else -> null
             }

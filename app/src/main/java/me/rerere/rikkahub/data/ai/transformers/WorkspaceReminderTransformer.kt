@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 让模型了解 workspace 环境与 workspace_* 工具的使用方式。
  * 提示中包含实际使用的 shell 与发行版, 避免模型默认按 bash / apt 来写命令。
  * 本地工作区同时读取 ~/.agents、/workspace 和会话当前目录中的 AGENTS.md 作为工作区指令。
- * 远程工作区不读取 AGENTS.md, shell 与发行版读到一次后缓存 (见 [RemoteEnvironmentCache]),
+ * 远程工作区不扫描项目文件；首次对话读取环境并短期缓存 (见 [RemoteEnvironmentCache]),
  * 连不上时只注入一段说明, 不阻塞对话。
  */
 class WorkspaceReminderTransformer(
@@ -42,12 +42,16 @@ class WorkspaceReminderTransformer(
         val prompt = if (workspace.isSsh()) {
             val environment = remoteEnvironments.get(workspaceId, workspace.sshConfig) {
                 // shell 探测需要连接, 失败时不再读发行版, 以免再等一次超时
-                RemoteEnvironment(shell = workspaceRepository.shell(workspaceId), distro = readDistroName(workspaceId))
+                val shell = workspaceRepository.shell(workspaceId)
+                val distro = readDistroName(workspaceId)
+                val identity = readRemoteIdentity(workspaceId)
+                RemoteEnvironment(shell, distro, identity["architecture"], identity["user"])
             }.getOrElse { e ->
                 Log.w("WorkspaceReminder", "Workspace unreachable: $workspaceId", e)
                 return messages.withPrompt(buildUnreachablePrompt(workspace, layout, e))
             }
-            buildSshWorkspacePrompt(workspace, layout, environment.shell, environment.distro, ctx.workspaceCwd)
+            buildSshWorkspacePrompt(workspace, layout, environment.shell, environment.distro, ctx.workspaceCwd,
+                environment.architecture, environment.user)
         } else {
             buildWorkspacePrompt(
                 workspace = workspace,
@@ -101,6 +105,19 @@ class WorkspaceReminderTransformer(
         }
     }
 
+    private suspend fun readRemoteIdentity(workspaceId: String): Map<String, String> = try {
+        val result = workspaceRepository.executeCommand(
+            workspaceId,
+            "printf 'architecture='; uname -m; printf 'user='; id -un",
+            timeoutMillis = 5_000,
+        )
+        parseRemoteIdentity(result.stdout)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        emptyMap() // Partial environment information must not prevent conversation.
+    }
+
     private suspend fun readDistroName(workspaceId: String): String? =
         OS_RELEASE_PATHS.firstNotNullOfOrNull { path ->
             readRootfsText(workspaceId, path, MAX_OS_RELEASE_BYTES)?.let(::parseOsReleaseName)
@@ -131,17 +148,31 @@ class WorkspaceReminderTransformer(
 }
 
 /** 远程工作区提示词里描述的执行环境 */
-internal data class RemoteEnvironment(val shell: String, val distro: String?)
+internal data class RemoteEnvironment(
+    val shell: String,
+    val distro: String?,
+    val architecture: String? = null,
+    val user: String? = null,
+)
+
+internal fun parseRemoteIdentity(output: String): Map<String, String> = output.take(4096).lineSequence()
+    .mapNotNull { line ->
+        val key = line.substringBefore('=')
+        if (key !in setOf("architecture", "user") || '=' !in line) return@mapNotNull null
+        val value = line.substringAfter('=').filter { it.isLetterOrDigit() || it in "_-." }.take(80)
+        value.takeIf { it.isNotBlank() }?.let { key to it }
+    }.toMap()
 
 /**
  * 按工作区缓存远程执行环境。
  *
- * 读一次要好几次网络往返, 而每一步请求都要构建提示词; 远程环境很少变化, 读到后就一直沿用, 直到连接配置改变。
+ * 首次使用时读取；成功结果短期缓存，过期或连接配置改变后刷新，不写入助手提示词或聊天快照。
  * 连不上的结果只保留 [failureTtlMillis]: 期间的后续步骤不必每步都等连接超时, 过期后再重新尝试。
  */
 internal class RemoteEnvironmentCache(
     private val failureTtlMillis: Long = DEFAULT_FAILURE_TTL_MS,
     private val now: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val successTtlMillis: Long = 15 * 60_000L,
 ) {
     private class Entry(val config: String?, val result: Result<RemoteEnvironment>, val loadedAt: Long)
 
@@ -153,7 +184,7 @@ internal class RemoteEnvironmentCache(
         load: suspend () -> RemoteEnvironment,
     ): Result<RemoteEnvironment> {
         entries[workspaceId]
-            ?.takeIf { it.config == config && (it.result.isSuccess || now() - it.loadedAt < failureTtlMillis) }
+            ?.takeIf { it.config == config && now() - it.loadedAt < (if (it.result.isSuccess) successTtlMillis else failureTtlMillis) }
             ?.let { return it.result }
         val result = try {
             Result.success(load())
@@ -235,12 +266,14 @@ private fun buildWorkspacePrompt(
     append("</workspace>")
 }
 
-private fun buildSshWorkspacePrompt(
+internal fun buildSshWorkspacePrompt(
     workspace: WorkspaceEntity,
     layout: WorkspaceLayout,
     shell: String,
     distro: String?,
     cwd: String?,
+    architecture: String? = null,
+    user: String? = null,
 ): String = buildString {
     val address = workspace.sshSettings()?.let { "${it.username}@${it.host}" } ?: "the remote host"
     appendLine("<workspace>")
@@ -259,12 +292,15 @@ private fun buildSshWorkspacePrompt(
     if (distro != null) {
         appendLine("- The remote operating system is $distro.")
     }
+    architecture?.let { appendLine("- Architecture: $it.") }
+    user?.let { appendLine("- Current execution user: $it.") }
+    appendLine("- Environment information may change. When entering a project, read its AGENTS.md / README and follow its conventions; do not scan unrelated directories.")
     appendShellLine(shell)
     appendLine("- Available tools:")
     appendLine("  - `workspace_read_file`: read file contents.")
     appendLine("  - `workspace_shell`: run shell commands on the remote machine (defaults to the workspace directory).")
     appendLine(
-        "- There are no file write or edit tools in this workspace. Create and modify files with `workspace_shell`, for example a quoted heredoc (`cat > file <<'EOF'`) for new content, or `sed`, `patch` or a short script for targeted edits. Prefer targeted edits over rewriting whole files."
+        "  - `workspace_write_file` / `workspace_edit_file`: create files or make precise edits with revision checks. Read existing files before editing; prefer targeted edits over rewriting whole files."
     )
     if (!cwd.isNullOrBlank()) {
         appendLine(
@@ -294,7 +330,7 @@ private fun StringBuilder.appendShellLine(shell: String) {
         appendLine("- `workspace_shell` runs commands with `$shell`.")
     } else {
         appendLine(
-            "- `workspace_shell` runs commands with `$shell`, a POSIX shell. Bash is not installed, so avoid bash-only syntax such as arrays, here-strings (`<<<`) and brace expansion."
+            "- `workspace_shell` runs commands with `$shell`. Do not assume Bash-specific syntax is supported."
         )
     }
 }

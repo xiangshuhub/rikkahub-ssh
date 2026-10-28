@@ -14,7 +14,8 @@ import me.rerere.rikkahub.data.ai.mcp.*
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.preferences.ToolApprovalPreferences
+import me.rerere.rikkahub.data.model.appManagementCapabilities
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
 import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.data.skills.SkillMetadata
@@ -22,7 +23,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlin.uuid.Uuid
 
-/** Human-opted-in configuration tools. No permission, credential or current-chat mutation API. */
+/** Dedicated manager configuration tools. No permission, credential or current-chat mutation API. */
 class AppManagementTools internal constructor(
     private val settingsStore: SettingsStore,
     private val skills: ManagementSkillAccess,
@@ -30,15 +31,17 @@ class AppManagementTools internal constructor(
     private val permissionSnapshot: suspend () -> Set<String>,
     private val backups: File,
     private val workspaceSnapshot: suspend () -> List<ManagementWorkspace> = { emptyList() },
+    private val mutex: Mutex = Mutex(),
 ) {
     constructor(context: Context, settingsStore: SettingsStore, skills: SkillManager, mcp: McpManager,
-        workspaces: me.rerere.rikkahub.data.repository.WorkspaceRepository) : this(
+        workspaces: me.rerere.rikkahub.data.repository.WorkspaceRepository,
+        caller: Assistant, mutationMutex: Mutex) : this(
         settingsStore, skills.managementAccess(), mcp::removeClient,
-        ToolApprovalPreferences(context)::managementPermissions,
+        { appManagementCapabilities(caller, settingsStore.awaitLoaded()) },
         File(context.noBackupFilesDir, "app-management-backups"),
         { workspaces.managementWorkspaceSnapshot() },
+        mutationMutex,
     )
-    private val mutex = Mutex()
     private val json = Json { encodeDefaults = true }
 
     suspend fun tools(): List<Tool> {
@@ -47,7 +50,7 @@ class AppManagementTools internal constructor(
             Tool(
                 name = "app_management_$category",
                 description = when (category) {
-                    "assistants" -> "Manage global assistant profiles. Actions: list, read, create, update, read_backup, list_workspaces, preview_workspace_binding. Workspace binding requires assistants AND workspace_bindings permissions. First preview_workspace_binding with id (existing assistant) or name (new assistant), workspace_id (UUID or none), scope=new_conversations. It returns workspace_confirmation and if_revision; copy them into create/update with the same workspace_id. This binds/switches/unbinds only, never deletes a workspace or changes an existing conversation. Binding does not verify connectivity. read_backup accepts backup_id from a previous edit and returns safe profile fields for recovery. Read returns revision; update requires if_revision. Writes require scope=new_conversations and human approval; never modify existing conversation snapshots. Optional skill_names/mcp_ids replace bindings and require the corresponding permission. Never put credentials in prompts."
+                    "assistants" -> "Manage global assistant profiles from the dedicated application manager. Actions: list, read, create, update, read_backup, list_workspaces, preview_workspace_binding. Management identity and enable/disable state are human-controlled and cannot be changed by tools. The manager itself cannot bind workspaces, Skills or MCP tools. First preview_workspace_binding with id (existing assistant) or name (new assistant), workspace_id (UUID or none), scope=new_conversations. It returns workspace_confirmation and if_revision; copy them into create/update with the same workspace_id. This binds/switches/unbinds only, never deletes a workspace or changes an existing conversation. Binding does not verify connectivity. read_backup accepts backup_id from a previous edit and returns safe profile fields for recovery. Read returns revision; update requires if_revision. Writes require scope=new_conversations and human approval; never modify existing conversation snapshots. Optional skill_names/mcp_ids replace ordinary assistants' bindings. Never put credentials in prompts."
                     "skills" -> "Manage Skills. Actions: list, read, save, delete, read_backup. read_backup accepts backup_id and returns previous SKILL.md content for recovery; attachments remain in the private backup. save accepts full SKILL.md content and if_revision=new for creation, or the latest revision for editing. Names use lowercase letters, digits and hyphens. Built-in Skills are read-only. Read before deletion; pass the exact delete_confirmation and revision returned. All writes require human approval."
                     else -> "Manage MCP configurations. Actions: list, create, delete. Create accepts name, url and transport (streamable_http or sse), always disabled with no credentials; the user must enable/login in settings. List returns revisions and delete_confirmation. Deletion requires both; removes configuration, stored credentials, connection and global assistant bindings. Never disclose or request tokens in tool arguments."
                 },
@@ -114,6 +117,8 @@ class AppManagementTools internal constructor(
     private fun assistantSummary(assistant: Assistant, full: Boolean = false) = buildJsonObject {
         put("id", assistant.id.toString()); put("name", assistant.name)
         put("revision", assistantRevision(assistant))
+        put("management_role", assistant.isAppManagementAssistant)
+        if (assistant.isAppManagementAssistant) put("management_enabled", assistant.managementEnabled)
         put("workspace_id", assistant.workspaceId?.toString()?.let(::JsonPrimitive) ?: JsonNull)
         if (full) {
             put("system_prompt", assistant.systemPrompt)
@@ -124,7 +129,12 @@ class AppManagementTools internal constructor(
     }
 
     private suspend fun assistantAction(args: JsonObject): JsonElement {
+        require(args.keys.all { it in setOf("action", "id", "name", "system_prompt", "model_id", "scope",
+            "if_revision", "backup_id", "workspace_id", "workspace_confirmation", "skill_names", "mcp_ids") }) {
+            "Unsupported assistant field. Management identity and permissions are human-controlled."
+        }
         val action = args.text("action")
+        if (action == "create") require("id" !in args) { "New assistant IDs are assigned by the app" }
         val settings = settingsStore.awaitLoaded()
         if (action == "list_workspaces") {
             requirePermission("workspace_bindings")
@@ -134,6 +144,7 @@ class AppManagementTools internal constructor(
             requirePermission("workspace_bindings")
             requireNewConversationScope(args.text("scope"))
             val old = args.optional("id")?.let { id -> settings.assistants.single { it.id.toString() == id } }
+            require(old?.isAppManagementAssistant != true) { "The management assistant cannot bind a workspace" }
             val name = old?.name ?: args.text("name").also(::validateManagementName)
             val target = parseWorkspaceBinding(args.text("workspace_id"))
             val workspaces = workspaceSnapshot()
@@ -188,6 +199,9 @@ class AppManagementTools internal constructor(
                 else latest.assistants.single { it.id.toString() == args.text("id") }.also {
                     requireManagementRevision(assistantRevision(it), args.text("if_revision"))
                 }
+            require(!old.isAppManagementAssistant || (!changesWorkspace && names == null && serverIds == null)) {
+                "The management assistant cannot bind workspaces, Skills or MCP tools"
+            }
             if (changesWorkspace) {
                 val expected = workspaceBindingConfirmation(old.name, old.id.takeIf { action != "create" },
                     old.workspaceId, workspaceId, workspaces)

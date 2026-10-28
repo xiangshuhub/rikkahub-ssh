@@ -100,7 +100,8 @@ fun ProviderSetting.encodeForShare(): String {
 
 // 账号凭据等于账号本身，不随分享带出，导入时也不接受
 private fun ProviderSetting.withoutCredential(): ProviderSetting =
-    if (this is ProviderSetting.Account) withCredential(null) else this
+    (if (this is ProviderSetting.Account) withCredential(null) else this)
+        .withProxy(me.rerere.ai.provider.ProviderProxy()) // Never export or accept an imported private proxy route.
 
 fun decodeProviderSetting(value: String): ProviderSetting {
     require(value.startsWith("ai-provider:v1:")) { "Invalid provider setting string" }

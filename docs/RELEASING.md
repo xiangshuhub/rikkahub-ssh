@@ -1,6 +1,6 @@
 # 正式版发布
 
-当前版本：`v3.1.3`，`versionCode=196`（首个正式版为 `v3.1.2` / 195），应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
+当前版本：`v3.1.5`，`versionCode=198`（跳过 v3.1.4）（首个正式版为 `v3.1.2` / 195），应用 ID `me.rerere.rikkahub.ssh`，最低 Android 8.0 / API 26。
 
 ## 签名
 
@@ -29,7 +29,7 @@ keyPassword=YOUR_PRIVATE_PASSWORD
 
 ```sh
 export RIKKAHUB_SIGNING_PROPERTIES=/absolute/private/path/signing.properties
-bash ./gradlew :app:assembleGithubRelease :app:testGithubDebugUnitTest :workspace:testDebugUnitTest \
+bash ./gradlew :app:assembleGithubRelease :app:testGithubDebugUnitTest :ai:testDebugUnitTest :workspace:testDebugUnitTest \
   -x :web:buildWebUi
 ```
 

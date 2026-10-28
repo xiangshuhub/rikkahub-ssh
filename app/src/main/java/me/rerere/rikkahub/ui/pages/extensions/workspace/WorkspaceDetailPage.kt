@@ -158,7 +158,29 @@ fun WorkspaceDetailPage(id: String, openFiles: Boolean = false, cwd: String = ""
     val installError by vm.installError.collectAsStateWithLifecycle()
     val settingsError by vm.settingsError.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = if (openFiles) WorkspaceDetailTab.FILES.ordinal else 0) { WorkspaceDetailTab.entries.size }
-    LaunchedEffect(id, cwd) { if (openFiles) vm.openInitialDirectory(cwd) }
+    // All file-browser entry points restore the workspace's last successful location.
+    // The route's cwd is retained for compatibility, but must not override browser history.
+    val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
+    val browserNotice by vm.browserNotice.collectAsStateWithLifecycle()
+    var showBookmarks by remember { mutableStateOf(false) }
+    if (showBookmarks) {
+        WorkspaceBookmarksDialog(
+            bookmarks = bookmarks,
+            current = WorkspaceBrowserLocation(state.area.name, state.path),
+            canBookmark = !state.loading && state.error == null && state.workspace != null,
+            onOpen = { vm.openBookmark(it); showBookmarks = false },
+            onSave = vm::saveBookmark,
+            onRemove = vm::removeBookmark,
+            onDismiss = { showBookmarks = false },
+        )
+    }
+    browserNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = vm::dismissBrowserNotice,
+            title = { Text("目录位置") }, text = { Text(notice) },
+            confirmButton = { TextButton(onClick = vm::dismissBrowserNotice) { Text("知道了") } },
+        )
+    }
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
@@ -220,6 +242,7 @@ fun WorkspaceDetailPage(id: String, openFiles: Boolean = false, cwd: String = ""
                 navigationIcon = { BackButton() },
                 actions = {
                     if (onFilesTab) {
+                        TextButton(onClick = { showBookmarks = true }) { Text("收藏夹") }
                         IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                             Icon(
                                 HugeIcons.FileImport,

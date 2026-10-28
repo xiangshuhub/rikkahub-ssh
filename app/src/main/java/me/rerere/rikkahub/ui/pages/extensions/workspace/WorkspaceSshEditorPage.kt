@@ -57,6 +57,7 @@ import me.rerere.hugeicons.stroke.Tick02
 import me.rerere.hugeicons.stroke.View
 import me.rerere.hugeicons.stroke.ViewOff
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -80,7 +81,40 @@ fun WorkspaceSshEditorPage(id: String?) {
     val editable = !state.busy
 
     LaunchedEffect(state.saved) {
-        if (state.saved) navController.popBackStack()
+        if (state.saved) {
+            navController.popBackStack()
+            state.openAssistantId?.let { navController.navigate(Screen.AssistantDetail(id = it)) }
+        }
+    }
+
+    if (state.assistantWorkspace != null && !state.saved) {
+        val created = state.createdAssistantId != null
+        AlertDialog(
+            onDismissRequest = { vm.finishAssistantSetup() },
+            title = { Text(stringResource(if (created) R.string.workspace_assistant_created else R.string.workspace_assistant_create_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(
+                        if (created) R.string.workspace_assistant_created_desc else R.string.workspace_assistant_create_desc,
+                        state.assistantWorkspace!!.name,
+                    ))
+                    state.assistantError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (state.saving) LoadingIndicator()
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !state.saving, onClick = {
+                    if (created) vm.finishAssistantSetup(configure = true) else vm.createAssistant()
+                }) {
+                    Text(stringResource(if (created) R.string.workspace_assistant_configure else R.string.workspace_assistant_create))
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !state.saving, onClick = { vm.finishAssistantSetup() }) {
+                    Text(stringResource(if (created) R.string.workspace_assistant_done else R.string.workspace_assistant_skip))
+                }
+            },
+        )
     }
 
     val privateKeyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

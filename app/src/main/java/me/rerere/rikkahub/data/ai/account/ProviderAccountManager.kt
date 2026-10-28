@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.provider.AccountCredentialProvider
+import me.rerere.ai.provider.withProviderProxy
 import me.rerere.ai.provider.OAuthCredential
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.await
@@ -57,8 +58,15 @@ class ProviderAccountManager(
     private val appScope: AppScope,
     private val client: OkHttpClient,
 ) : AccountCredentialProvider {
-    // 走应用的 OkHttpClient，授权和刷新请求也能用上设置里的代理
-    private val oauthClient = OAuthHttpClient(client)
+    // In-app token exchange/refresh follows the provider route; external browser traffic is separate.
+    private suspend fun <T> withOAuth(provider: ProviderSetting.Account, block: suspend (OAuthHttpClient) -> T): T {
+        val transport = client.withProviderProxy(provider.proxy)
+        try {
+            return block(OAuthHttpClient(transport))
+        } finally {
+            if (transport !== client) transport.connectionPool.evictAll()
+        }
+    }
     private val chatGPTCallbackServer = OAuthLoopbackCallbackServer(
         port = ChatGPTAuth.CALLBACK_PORT,
         callbackPath = ChatGPTAuth.CALLBACK_PATH,
@@ -76,9 +84,11 @@ class ProviderAccountManager(
         setStatus(providerId, AccountLoginStatus.Authorizing)
         val job = appScope.launch {
             try {
-                val credential = when (provider) {
-                    is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext)
-                    is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext)
+                val credential = withOAuth(provider) { oauth ->
+                    when (provider) {
+                        is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext, oauth)
+                        is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext, oauth)
+                    }
                 }
                 persistCredential(providerId, credential)
                 setStatus(providerId, null)
@@ -139,16 +149,18 @@ class ProviderAccountManager(
             val refreshToken = credential.refreshToken
                 ?: error("${latest.name}: session expired, please sign in again")
             val refreshed = try {
-                when (latest) {
-                    is ProviderSetting.ChatGPT -> ChatGPTAuth.toCredential(
-                        token = oauthClient.refreshToken(ChatGPTAuth.refreshRequest(refreshToken)),
-                        previous = credential,
-                    )
+                withOAuth(setting) { oauthClient ->
+                    when (latest) {
+                        is ProviderSetting.ChatGPT -> ChatGPTAuth.toCredential(
+                            token = oauthClient.refreshToken(ChatGPTAuth.refreshRequest(refreshToken)),
+                            previous = credential,
+                        )
 
-                    is ProviderSetting.Grok -> GrokAuth.toCredential(
-                        token = oauthClient.refreshToken(GrokAuth.refreshRequest(refreshToken)),
-                        previous = credential,
-                    )
+                        is ProviderSetting.Grok -> GrokAuth.toCredential(
+                            token = oauthClient.refreshToken(GrokAuth.refreshRequest(refreshToken)),
+                            previous = credential,
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -166,7 +178,7 @@ class ProviderAccountManager(
         }
     }
 
-    private suspend fun loginChatGPT(context: Context): OAuthCredential =
+    private suspend fun loginChatGPT(context: Context, oauthClient: OAuthHttpClient): OAuthCredential =
         withContext(Dispatchers.IO) {
             val pkce = oauthClient.generatePkce()
             val state = oauthClient.generateState()
@@ -204,7 +216,7 @@ class ProviderAccountManager(
         }
 
     // 登录由 appScope（主线程）发起，网络请求和读响应体都放到 IO
-    private suspend fun loginGrok(providerId: Uuid, context: Context): OAuthCredential =
+    private suspend fun loginGrok(providerId: Uuid, context: Context, oauthClient: OAuthHttpClient): OAuthCredential =
         withContext(Dispatchers.IO) {
             val authorization =
                 oauthClient.requestDeviceAuthorization(GrokAuth.deviceAuthorizationRequest())

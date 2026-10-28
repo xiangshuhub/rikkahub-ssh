@@ -10,6 +10,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.SshWorkspaceDraft
+import me.rerere.rikkahub.data.model.createWorkspaceAssistant
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.ssh.SshAuthType
 import me.rerere.workspace.ssh.SshHostKey
@@ -20,11 +24,41 @@ import me.rerere.workspace.ssh.SshUnknownHostKeyException
 class WorkspaceSshEditorVM(
     private val id: String?,
     private val repository: WorkspaceRepository,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow(WorkspaceSshEditorState(loading = id != null))
     val state = _state.asStateFlow()
 
     val isNew: Boolean = id == null
+    private val newAssistantId = Uuid.random()
+
+    fun finishAssistantSetup(configure: Boolean = false) {
+        if (state.value.saving) return
+        _state.update { it.copy(saved = true, openAssistantId = it.createdAssistantId.takeIf { configure }) }
+    }
+
+    fun createAssistant() {
+        val workspace = state.value.assistantWorkspace ?: return
+        if (state.value.saving || state.value.createdAssistantId != null || state.value.saved) return
+        _state.update { it.copy(saving = true, assistantError = null) }
+        viewModelScope.launch {
+            try {
+                val current = repository.getById(workspace.id) ?: error("Workspace no longer exists")
+                require(current.isSsh())
+                val assistant = createWorkspaceAssistant(Uuid.parse(current.id), current.name, newAssistantId)
+                settingsStore.awaitLoaded()
+                settingsStore.update { settings ->
+                    if (settings.assistants.any { it.id == newAssistantId }) settings
+                    else settings.copy(assistants = settings.assistants + assistant)
+                }
+                _state.update { it.copy(saving = false, createdAssistantId = newAssistantId.toString()) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(saving = false, assistantError = e.message ?: e.javaClass.simpleName) }
+            }
+        }
+    }
 
     init {
         if (id != null) {
@@ -147,8 +181,8 @@ class WorkspaceSshEditorVM(
         _state.update { it.copy(saving = true) }
         viewModelScope.launch {
             try {
-                repository.saveSsh(id, draft)
-                _state.update { it.copy(saving = false, saved = true) }
+                val workspace = repository.saveSsh(id, draft)
+                _state.update { it.copy(saving = false, saved = !isNew, assistantWorkspace = workspace.takeIf { isNew }) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -205,9 +239,13 @@ data class WorkspaceSshEditorState(
     /** 保存前测试失败的配置, 用户可以选择仍然保存它 */
     val saveAnywayDraft: SshWorkspaceDraft? = null,
     val saved: Boolean = false,
+    val assistantWorkspace: WorkspaceEntity? = null,
+    val createdAssistantId: String? = null,
+    val openAssistantId: String? = null,
+    val assistantError: String? = null,
 ) {
     val busy: Boolean
-        get() = loading || testing || saving
+        get() = loading || testing || saving || saved || assistantWorkspace != null
 
     val canSaveAnyway: Boolean
         get() = saveAnywayDraft != null

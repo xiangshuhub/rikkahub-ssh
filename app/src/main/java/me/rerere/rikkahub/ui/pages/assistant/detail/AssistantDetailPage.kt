@@ -52,6 +52,11 @@ import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Wrench01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.ui.components.Select
+import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
+import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -74,6 +79,7 @@ fun AssistantDetailPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
+    val workspaces by vm.workspaces.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val listState = rememberLazyListState()
@@ -122,6 +128,42 @@ fun AssistantDetailPage(id: String) {
                 )
             }
 
+            if (assistant.isAppManagementAssistant) {
+                item {
+                    CardGroup {
+                        switchItem(
+                            checked = assistant.managementEnabled,
+                            onCheckedChange = { vm.update(assistant.copy(managementEnabled = it)) },
+                            headlineContent = { Text(stringResource(R.string.management_assistant_enable)) },
+                            supportingContent = { Text(stringResource(R.string.management_assistant_description)) },
+                        )
+                    }
+                }
+            }
+
+            if (!assistant.isAppManagementAssistant) {
+                item("workspaceBinding") {
+                    CardGroup {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.assistant_page_workspace)) },
+                            supportingContent = { Text(stringResource(R.string.assistant_page_workspace_desc)) },
+                        ) {
+                            Select(
+                                options = listOf<WorkspaceEntity?>(null) + workspaces,
+                                selectedOption = workspaces.find { it.id == assistant.workspaceId?.toString() },
+                                onOptionSelected = { workspace ->
+                                    vm.update(assistant.copy(workspaceId = workspace?.id?.let { Uuid.parse(it) }))
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                optionToString = { workspace ->
+                                    workspace?.name ?: stringResource(R.string.workspace_no_binding)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
             item {
                 val containerColor = MaterialTheme.colorScheme.primaryContainer
                 val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -141,6 +183,7 @@ fun AssistantDetailPage(id: String) {
                 }
             }
 
+            if (!assistant.isAppManagementAssistant) {
             item {
                 val containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
@@ -181,6 +224,7 @@ fun AssistantDetailPage(id: String) {
                         headlineContent = { Text(stringResource(R.string.assistant_page_tab_request)) },
                     )
                 }
+            }
             }
         }
     }

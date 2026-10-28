@@ -8,35 +8,34 @@ class ToolApprovalPolicyTest {
     @Test
     fun `automatic approval is on by default`() {
         assertTrue(DEFAULT_AUTO_APPROVE_TOOLS)
-        assertTrue(shouldAutoApproveTool("workspace_shell", true, emptySet()))
-        assertTrue(shouldAutoApproveTool("mcp__server__write", true, emptySet()))
+        assertTrue(shouldAutoApproveTool("workspace_shell", true))
+        assertTrue(shouldAutoApproveTool("mcp__server__write", true))
     }
 
     @Test
-    fun `management tools cannot bypass confirmation using global or individual grants`() {
+    fun `management tools cannot bypass confirmation using global switch`() {
         listOf("app_management_assistants", "app_management_skills", "app_management_mcp").forEach { name ->
-            assertFalse(canGrantToolPermanently(name))
-            assertFalse(shouldAutoApproveTool(name, true, setOf(name)))
-            assertFalse(shouldAutoApproveTool(name, false, setOf(name)))
+            assertFalse(shouldAutoApproveTool(name, true))
+            assertFalse(shouldAutoApproveTool(name, false))
         }
     }
 
     @Test
     fun `questions are never automatically answered`() {
-        assertFalse(shouldAutoApproveTool("ask_user", true, setOf("ask_user")))
-        assertFalse(canGrantToolPermanently("ask_user"))
+        assertFalse(shouldAutoApproveTool("ask_user", true))
+        assertFalse(shouldAutoApproveTool("ask_user", false))
     }
 
     @Test
-    fun `disabled automatic approval respects individual grants`() {
-        assertFalse(shouldAutoApproveTool("calendar", false, emptySet()))
-        assertTrue(shouldAutoApproveTool("calendar", false, setOf("calendar")))
-        assertFalse(shouldAutoApproveTool("calendar", false, setOf("other")))
+    fun `disabled automatic approval leaves original tool policies intact`() {
+        listOf("calendar", "clipboard", "mcp__server__write").forEach { name ->
+            assertFalse(shouldAutoApproveTool(name, false))
+        }
     }
 
     @Test
-    fun `workspace grants cannot leak between workspaces`() {
-        assertFalse(canGrantToolPermanently("workspace_shell"))
-        assertFalse(shouldAutoApproveTool("workspace_shell", false, setOf("workspace_shell")))
+    fun `disabled automatic approval leaves workspace scoped policies intact`() {
+        assertFalse(shouldAutoApproveTool("workspace_shell", false))
+        assertFalse(shouldAutoApproveTool("workspace_edit_file", false))
     }
 }

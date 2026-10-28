@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import me.rerere.rikkahub.utils.openUrl
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -45,8 +48,8 @@ private val cache = SimpleCache.builder<String, ProviderQuota>()
 fun rememberProviderQuota(providerSetting: ProviderSetting): Result<ProviderQuota>? {
     val providerManager = koinInject<ProviderManager>()
     // 查询配置或登录的账号变了要重新查
-    val cacheKey = "${providerSetting.id}," + when (providerSetting) {
-        is ProviderSetting.ApiKey -> providerSetting.quotaQuery.hashCode()
+    val cacheKey = "${providerSetting.id},${providerSetting.proxy.hashCode()}," + when (providerSetting) {
+        is ProviderSetting.ApiKey -> listOf(providerSetting.baseUrl, providerSetting.apiKey, providerSetting.quotaQuery).hashCode()
         is ProviderSetting.Account -> providerSetting.credential?.accountId
     }
     val quota by produceState(
@@ -84,14 +87,16 @@ fun ProviderQuotaText(
         quota == null -> "Error: ${result.exceptionOrNull()?.message}"
         else -> when (quota) {
             is ProviderQuota.Balance -> quota.value
+            is ProviderQuota.Website -> stringResource(R.string.provider_quota_view_website)
             is ProviderQuota.UsageLimits -> quota.windows.joinToString(" · ") { window ->
                 "${window.shortLabel()} ${window.usedPercent.roundToInt()}%".trim()
             }
         }
     }
 
+    val context = LocalContext.current
     Row(
-        modifier = modifier,
+        modifier = if (quota is ProviderQuota.Website) modifier.clickable { context.openUrl(quota.url) } else modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {

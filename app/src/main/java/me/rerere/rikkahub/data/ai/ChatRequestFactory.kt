@@ -18,6 +18,8 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
+import me.rerere.rikkahub.data.model.managementOnly
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -97,9 +99,11 @@ class ChatRequestFactory(
     /** 解析本轮的助手、模型、记忆和工具；MCP 服务名不合法时抛出 InvalidMcpServerNamesException */
     suspend fun createContext(settings: Settings, conversation: Conversation): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
-        val assistant = settings.getAssistantOf(conversation)
-        val model = settings.getChatModelOf(conversation)
+        val assistant = settings.getAssistantOf(conversation).managementOnly()
+        val configuredModel = settings.getChatModelOf(conversation)
             ?: throw IllegalStateException("No chat model selected")
+        // Native provider tools (search/code execution) are excluded too, not just custom tools.
+        val model = if (assistant.isAppManagementAssistant) configuredModel.copy(tools = emptySet()) else configuredModel
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         return ChatTurnContext(
             settings = settings,

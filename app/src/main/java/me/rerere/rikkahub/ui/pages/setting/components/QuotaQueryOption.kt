@@ -26,6 +26,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import me.rerere.ai.provider.isOpenCodeZen
+import me.rerere.ai.provider.OPENCODE_CONSOLE_URL
+import me.rerere.ai.provider.isMainlandSiliconFlow
+import me.rerere.ai.provider.SILICONFLOW_CONSOLE_URL
+import me.rerere.rikkahub.utils.openUrl
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.QuotaQuery
@@ -47,6 +53,7 @@ fun SettingProviderQuotaQuery(
     onEdit: (QuotaQuery) -> Unit,
 ) {
     val query = provider.quotaQuery
+    val context = LocalContext.current
     var expand by remember { mutableStateOf(false) }
     val codeStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = JetbrainsMono)
     CardGroup(modifier = modifier) {
@@ -71,6 +78,26 @@ fun SettingProviderQuotaQuery(
                 }
             },
         ) {
+            if (provider.isOpenCodeZen) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.provider_quota_opencode_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { context.openUrl(OPENCODE_CONSOLE_URL) }) {
+                        Text(stringResource(R.string.provider_quota_view_website))
+                    }
+                }
+            }
+            if (provider.isMainlandSiliconFlow) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.provider_quota_siliconflow_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { context.openUrl(SILICONFLOW_CONSOLE_URL) }) {
+                        Text(stringResource(R.string.provider_quota_view_website))
+                    }
+                }
+            }
             AnimatedVisibility(visible = expand) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -176,6 +203,7 @@ private fun isQuotaUrlValid(url: String): Boolean = runCatching {
     renderQuotaTemplate(url.trim()) { name ->
         when (name) {
             QuotaQuery.VARIABLE_BASE_URL -> "https://example.com/v1"
+            QuotaQuery.VARIABLE_ORIGIN -> "https://example.com"
             QuotaQuery.VARIABLE_API_KEY -> "key"
             else -> null
         }

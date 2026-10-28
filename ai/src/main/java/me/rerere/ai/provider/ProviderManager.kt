@@ -12,12 +12,14 @@ import okhttp3.OkHttpClient
  * Provider管理器，负责注册和获取Provider实例
  */
 class ProviderManager(
-    client: OkHttpClient,
-    context: Context,
-    accountCredentials: AccountCredentialProvider,
+    private val client: OkHttpClient,
+    private val context: Context?,
+    private val accountCredentials: AccountCredentialProvider,
 ) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
+    private data class Proxied(val config: ProviderProxy, val type: String, val client: OkHttpClient, val provider: Provider<*>)
+    private val proxied = LinkedHashMap<kotlin.uuid.Uuid, Proxied>(16, 0.75f, true)
 
     init {
         // 注册默认Provider
@@ -26,6 +28,30 @@ class ProviderManager(
         registerProvider("claude", ClaudeProvider(client, context))
         registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials))
         registerProvider("grok", GrokProvider(client, accountCredentials))
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : ProviderSetting> createProvider(setting: T, transport: OkHttpClient): Provider<T> = when (setting) {
+        is ProviderSetting.OpenAI -> OpenAIProvider(transport, context)
+        is ProviderSetting.Google -> GoogleProvider(transport, context)
+        is ProviderSetting.Claude -> ClaudeProvider(transport, context)
+        is ProviderSetting.ChatGPT -> ChatGPTProvider(transport, accountCredentials)
+        is ProviderSetting.Grok -> GrokProvider(transport, accountCredentials)
+    } as Provider<T>
+
+    /** Uses a separate short-lived transport, including for unsaved form values. No generation charges. */
+    suspend fun testConnection(setting: ProviderSetting) {
+        val transport = client.newBuilder()
+            .connectionPool(okhttp3.ConnectionPool())
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build().withProviderProxy(setting.proxy)
+        try {
+            createProvider(setting, transport).listModels(setting)
+        } finally {
+            transport.connectionPool.evictAll()
+        }
     }
 
     /**
@@ -54,7 +80,26 @@ class ProviderManager(
      * @param setting Provider设置
      * @return Provider实例，如果不存在则返回null
      */
+    @Synchronized
     fun <T : ProviderSetting> getProviderByType(setting: T): Provider<T> {
+        val type = setting.javaClass.name
+        if (setting.proxy.enabled) {
+            val cached = proxied[setting.id]
+            if (cached?.config != setting.proxy || cached.type != type) {
+                val transport = client.withProviderProxy(setting.proxy)
+                val provider = createProvider(setting, transport)
+                cached?.client?.connectionPool?.evictAll()
+                proxied[setting.id] = Proxied(setting.proxy, type, transport, provider)
+                if (proxied.size > 32) {
+                    val oldest = proxied.entries.first()
+                    oldest.value.client.connectionPool.evictAll()
+                    proxied.remove(oldest.key)
+                }
+            }
+            @Suppress("UNCHECKED_CAST")
+            return proxied.getValue(setting.id).provider as Provider<T>
+        }
+        proxied.remove(setting.id)?.client?.connectionPool?.evictAll()
         @Suppress("UNCHECKED_CAST")
         return when (setting) {
             is ProviderSetting.OpenAI -> getProvider("openai")

@@ -2,6 +2,8 @@ package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.sync.Mutex
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.BuiltInTools
@@ -46,18 +48,22 @@ class ChatToolFactory(
     private val mcpManager: McpManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
-    settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
+    private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
 ) {
-    private val appManagement = AppManagementTools(context, settingsStore, skillManager, mcpManager, workspaceRepository)
+    private val managementMutationMutex = Mutex()
     suspend fun createTools(
         settings: Settings,
         assistant: Assistant,
         model: Model,
         workspaceCwd: String? = null,
     ): List<Tool> {
+        // Return early: never connect workspaces/MCP, load Skills or register ordinary tools for this role.
+        if (assistant.isAppManagementAssistant) {
+            return AppManagementTools(context, settingsStore, skillManager, mcpManager, workspaceRepository,
+                assistant, managementMutationMutex).tools()
+        }
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val tools = buildList {
-            addAll(appManagement.tools())
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
             }
@@ -103,10 +109,9 @@ class ChatToolFactory(
         val canReadToolOutputs = workspaceTools.isNotEmpty() &&
             assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }?.capabilities()?.rootfs == true
         val approvals = ToolApprovalPreferences(context)
-        approvals.rememberTools(tools.mapTo(mutableSetOf()) { it.name })
-        val (autoApprove, grants) = approvals.snapshot()
+        val autoApprove = approvals.snapshot()
         val authorizedTools = tools.map { tool ->
-            if (shouldAutoApproveTool(tool.name, autoApprove, grants)) {
+            if (shouldAutoApproveTool(tool.name, autoApprove)) {
                 tool.copy(needsApproval = { false })
             } else {
                 tool

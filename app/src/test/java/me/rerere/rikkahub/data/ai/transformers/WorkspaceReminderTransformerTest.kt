@@ -57,6 +57,29 @@ class WorkspaceReminderTransformerTest {
     }
 
     @Test
+    fun `successful remote environment expires and workspace caches are independent`() = runTest {
+        var now = 0L
+        val cache = RemoteEnvironmentCache(now = { now }, successTtlMillis = 1000)
+        var loads = 0
+        val load = suspend { RemoteEnvironment("/bin/sh", "Linux ${++loads}", "aarch64", "operator") }
+        assertEquals("Linux 1", cache.get("a", "config", load).getOrThrow().distro)
+        assertEquals("Linux 2", cache.get("b", "config", load).getOrThrow().distro)
+        now = 999
+        assertEquals("Linux 1", cache.get("a", "config", load).getOrThrow().distro)
+        now = 1000
+        assertEquals("Linux 3", cache.get("a", "config", load).getOrThrow().distro)
+    }
+
+    @Test
+    fun `remote identity keeps only small recognized fields`() {
+        val identity = parseRemoteIdentity("architecture=x86_64\nuser=deploy-user\nTOKEN=private\n")
+        assertEquals(mapOf("architecture" to "x86_64", "user" to "deploy-user"), identity)
+        assertEquals(emptyMap<String, String>(), parseRemoteIdentity("permission denied\nuser=\n"))
+        assertEquals(80, parseRemoteIdentity("user=${"x".repeat(200)}")["user"]!!.length)
+        assertEquals("root", parseRemoteIdentity("user=ro\u0007ot")["user"])
+    }
+
+    @Test
     fun `remote failure should be reused until it expires`() = runTest {
         var now = 0L
         val cache = RemoteEnvironmentCache(failureTtlMillis = 60_000, now = { now })

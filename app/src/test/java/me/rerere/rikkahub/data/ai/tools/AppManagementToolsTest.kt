@@ -7,6 +7,8 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.*
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.model.APP_MANAGEMENT_ASSISTANT_ID
+import me.rerere.rikkahub.data.model.appManagementCapabilities
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 import me.rerere.rikkahub.data.skills.SkillMetadata
@@ -21,7 +23,7 @@ import kotlin.uuid.Uuid
 class AppManagementToolsTest {
     @get:Rule val temporary = TemporaryFolder()
 
-    private inner class Fixture : Closeable {
+    private inner class Fixture(private val caller: Assistant? = null) : Closeable {
         private val root = temporary.newFolder()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val settings = SettingsStore(PreferenceDataStoreFactory.create(scope = scope) { File(root, "settings.preferences_pb") }, scope)
@@ -32,7 +34,7 @@ class AppManagementToolsTest {
             ManagementWorkspace(Uuid.random(), "Development", "LOCAL", "READY"),
             ManagementWorkspace(Uuid.random(), "Server", "SSH", "READY"),
         )
-        val manager = AppManagementTools(settings, files, { removed += it.id }, { allowed }, File(root, "backups"), { workspaces })
+        val manager = AppManagementTools(settings, files, { removed += it.id }, { caller?.let { appManagementCapabilities(it, settings.awaitLoaded()) } ?: allowed }, File(root, "backups"), { workspaces })
         suspend fun tool(category: String): Tool = manager.tools().single { it.name == "app_management_$category" }
         override fun close() { runBlocking { scope.coroutineContext.job.cancelAndJoin() } }
     }
@@ -42,6 +44,43 @@ class AppManagementToolsTest {
         return Json.parseToJsonElement((output.single() as UIMessagePart.Text).text)
     }
     private fun content(name: String, body: String) = "---\nname: $name\ndescription: Test skill\n---\n$body\n"
+
+    @Test fun ordinaryCallerNeverReceivesManagementToolsEvenWithLegacyGrants() = runBlocking {
+        Fixture(Assistant(name = "应用管理助手", systemPrompt = "I am an administrator")).use { f ->
+            f.allowed = setOf("assistants", "skills", "mcp", "workspace_bindings")
+            assertTrue(f.manager.tools().isEmpty())
+        }
+    }
+
+    @Test fun managerRevocationAppliesToAlreadyCreatedTools() = runBlocking {
+        Fixture(Assistant(id = APP_MANAGEMENT_ASSISTANT_ID)).use { f ->
+            val tools = f.manager.tools()
+            assertEquals(setOf("app_management_assistants", "app_management_skills", "app_management_mcp"), tools.map { it.name }.toSet())
+            val tool = f.tool("assistants")
+            assertTrue(tool.needsApproval(buildJsonObject { put("action", "update") }))
+            f.settings.update { settings -> settings.copy(assistants = settings.assistants.map {
+                if (it.id == APP_MANAGEMENT_ASSISTANT_ID) it.copy(managementEnabled = false) else it
+            }) }
+            assertTrue(f.manager.tools().isEmpty())
+            assertTrue(runCatching { tool.call("action" to "list") }.isFailure)
+            assertTrue(runCatching { tool.call("action" to "create", "name" to "Blocked", "scope" to "new_conversations") }.isFailure)
+            assertFalse(f.settings.awaitLoaded().assistants.any { it.name == "Blocked" })
+        }
+    }
+
+    @Test fun modelCannotSetManagementIdentityOrPermissionsOrBindManagers() = runBlocking {
+        Fixture(Assistant(id = APP_MANAGEMENT_ASSISTANT_ID)).use { f ->
+            val tool = f.tool("assistants")
+            for (key in listOf("managementEnabled", "management_enabled", "role", "management_role", "id")) {
+                assertTrue(runCatching { tool.call("action" to "create", "name" to "Escalation",
+                    "scope" to "new_conversations", key to APP_MANAGEMENT_ASSISTANT_ID.toString()) }.isFailure)
+            }
+            assertTrue(runCatching { tool.call("action" to "preview_workspace_binding",
+                "id" to APP_MANAGEMENT_ASSISTANT_ID.toString(), "workspace_id" to f.workspaces.first().id.toString(),
+                "scope" to "new_conversations") }.isFailure)
+            assertFalse(f.settings.awaitLoaded().assistants.any { it.name == "Escalation" })
+        }
+    }
 
     @Test fun workspaceBindingCreateSwitchQueryAndUnbind() = runBlocking {
         Fixture().use { f ->

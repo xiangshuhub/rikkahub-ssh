@@ -12,6 +12,9 @@ sealed interface ProviderQuota {
     /** 余额。用户自定义查询（[QuotaQuery]）的结果都归到这里 */
     data class Balance(val value: String) : ProviderQuota
 
+    /** No supported API for this default query; guide the user to the provider's website instead. */
+    data class Website(val url: String) : ProviderQuota
+
     /** 订阅制的用量限制，按时间窗口统计已用比例 */
     data class UsageLimits(
         val windows: List<UsageWindow>,
@@ -45,11 +48,12 @@ data class QuotaQuery(
 ) {
     companion object {
         const val VARIABLE_BASE_URL = "baseUrl"
+        const val VARIABLE_ORIGIN = "origin" // Same scheme/host/port as baseUrl, without its API path.
 
         // 填了多个 key 时取其中一个，和对话请求一样轮换
         const val VARIABLE_API_KEY = "apiKey"
 
-        val VARIABLES = listOf(VARIABLE_BASE_URL, VARIABLE_API_KEY)
+        val VARIABLES = listOf(VARIABLE_BASE_URL, VARIABLE_ORIGIN, VARIABLE_API_KEY)
     }
 }
 

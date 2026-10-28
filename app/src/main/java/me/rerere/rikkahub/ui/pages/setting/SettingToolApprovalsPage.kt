@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.preferences.DEFAULT_AUTO_APPROVE_TOOLS
@@ -44,10 +43,6 @@ fun SettingToolApprovalsPage() {
     val context = LocalContext.current
     val preferences = remember(context) { ToolApprovalPreferences(context) }
     val autoApprove by preferences.autoApproveFlow.collectAsStateWithLifecycle(DEFAULT_AUTO_APPROVE_TOOLS)
-    val grants by preferences.grantsFlow.collectAsStateWithLifecycle(emptySet())
-    val knownTools by preferences.knownToolsFlow.collectAsStateWithLifecycle(emptySet())
-    val tools = remember(knownTools, grants) { (knownTools + grants).sorted() }
-    val managementPermissions by preferences.managementPermissionsFlow.collectAsStateWithLifecycle(emptySet())
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var confirmEnable by remember { mutableStateOf(false) }
@@ -93,59 +88,6 @@ fun SettingToolApprovalsPage() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item("managementHeading") {
-                Text(stringResource(R.string.app_management_title), modifier = Modifier.padding(horizontal = 12.dp),
-                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
-            item("managementPermissions") {
-                CardGroup(Modifier.fillMaxWidth()) {
-                    listOf(
-                        "assistants" to R.string.app_management_assistants,
-                        "workspace_bindings" to R.string.app_management_workspace_bindings,
-                        "skills" to R.string.app_management_skills,
-                        "mcp" to R.string.app_management_mcp,
-                    ).forEach { (category, label) ->
-                        switchItem(
-                            checked = category in managementPermissions,
-                            onCheckedChange = { enabled -> scope.launch { preferences.setManagementPermission(category, enabled) } },
-                            headlineContent = { Text(stringResource(label)) },
-                        )
-                    }
-                }
-            }
-            item("managementDescription") {
-                Text(stringResource(R.string.app_management_description), modifier = Modifier.padding(horizontal = 12.dp),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            item("individualHeading") {
-                Text(
-                    text = stringResource(R.string.tool_approvals_individual),
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            item("individualGrants") {
-                CardGroup(Modifier.fillMaxWidth()) {
-                    if (tools.isEmpty()) {
-                        item(
-                            headlineContent = { Text(stringResource(R.string.tool_approvals_no_tools)) },
-                            supportingContent = { Text(stringResource(R.string.tool_approvals_empty)) },
-                        )
-                    } else {
-                        tools.forEach { name ->
-                            switchItem(
-                                checked = name in grants,
-                                onCheckedChange = { enabled ->
-                                    scope.launch { preferences.setGranted(name, enabled) }
-                                },
-                                headlineContent = { Text(name) },
-                                supportingContent = { Text(stringResource(R.string.tool_approvals_always)) },
-                            )
-                        }
-                    }
-                }
-            }
             item("scope") {
                 Text(
                     text = stringResource(R.string.tool_approvals_scope),
@@ -153,25 +95,6 @@ fun SettingToolApprovalsPage() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (grants.isNotEmpty()) {
-                item("revokeAll") {
-                    CardGroup(Modifier.fillMaxWidth()) {
-                        item(
-                            onClick = { scope.launch { preferences.revokeAll() } },
-                            leadingContent = {
-                                CardGroupIcon(
-                                    HugeIcons.Delete01,
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.tool_approvals_revoke_all), color = MaterialTheme.colorScheme.error)
-                            },
-                        )
-                    }
-                }
             }
         }
     }

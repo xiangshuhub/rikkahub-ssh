@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.di
 
+import org.koin.android.ext.koin.androidContext
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceBrowserPreferences
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
@@ -94,12 +96,14 @@ val viewModelModule = module {
             id = it.get(),
             repository = get(),
             terminalSessionManager = get(),
+            browserPreferences = WorkspaceBrowserPreferences(androidContext()),
         )
     }
     viewModel<WorkspaceSshEditorVM> {
         WorkspaceSshEditorVM(
             id = it.getOrNull(),
             repository = get(),
+            settingsStore = get(),
         )
     }
     viewModelOf(::FavoriteVM)

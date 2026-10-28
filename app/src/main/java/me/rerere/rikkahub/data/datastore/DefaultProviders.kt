@@ -170,7 +170,7 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true,
         quotaQuery = QuotaQuery(
             enabled = true,
-            url = "{{baseUrl}}/user/balance",
+            url = "{{origin}}/user/balance",
             resultPath = "balance_infos[0].total_balance"
         )
     ),

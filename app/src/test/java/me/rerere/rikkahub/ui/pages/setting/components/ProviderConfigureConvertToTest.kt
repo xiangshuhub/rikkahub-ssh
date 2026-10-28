@@ -14,6 +14,14 @@ import kotlin.uuid.Uuid
 
 class ProviderConfigureConvertToTest {
     @Test
+    fun `changing protocol preserves proxy instead of silently reverting to default network`() {
+        val proxy = me.rerere.ai.provider.ProviderProxy(enabled = true, port = 10999)
+        val original = ProviderSetting.OpenAI(proxy = proxy)
+        assertEquals(proxy, original.convertTo(ProviderSetting.Google::class).proxy)
+        assertEquals(proxy, original.convertTo(ProviderSetting.Claude::class).proxy)
+    }
+
+    @Test
     fun `convertTo should keep common fields and switch official endpoint to target default`() {
         val model = Model(
             id = Uuid.random(),

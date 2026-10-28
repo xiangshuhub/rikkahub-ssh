@@ -55,6 +55,15 @@ sealed class ProviderSetting {
     abstract val name: String
     abstract val models: List<Model>
     abstract val customHeaders: List<CustomHeader>
+    abstract val proxy: ProviderProxy
+
+    fun withProxy(proxy: ProviderProxy): ProviderSetting = when (this) {
+        is OpenAI -> copy(proxy = proxy)
+        is Google -> copy(proxy = proxy)
+        is Claude -> copy(proxy = proxy)
+        is ChatGPT -> copy(proxy = proxy)
+        is Grok -> copy(proxy = proxy)
+    }
 
     abstract val builtIn: Boolean
     abstract val description:
@@ -88,6 +97,7 @@ sealed class ProviderSetting {
     @Serializable
     @SerialName("openai")
     data class OpenAI(
+        override val proxy: ProviderProxy = ProviderProxy(),
         override var id: Uuid = Uuid.random(),
         override var enabled: Boolean = true,
         override var name: String = "OpenAI",
@@ -132,6 +142,7 @@ sealed class ProviderSetting {
     @Serializable
     @SerialName("google")
     data class Google(
+        override val proxy: ProviderProxy = ProviderProxy(),
         override var id: Uuid = Uuid.random(),
         override var enabled: Boolean = true,
         override var name: String = "Google",
@@ -180,6 +191,7 @@ sealed class ProviderSetting {
     @Serializable
     @SerialName("claude")
     data class Claude(
+        override val proxy: ProviderProxy = ProviderProxy(),
         override var id: Uuid = Uuid.random(),
         override var enabled: Boolean = true,
         override var name: String = "Claude",
@@ -248,6 +260,7 @@ sealed class ProviderSetting {
     @Serializable
     @SerialName("chatgpt")
     data class ChatGPT(
+        override val proxy: ProviderProxy = ProviderProxy(),
         override val id: Uuid = Uuid.random(),
         override val enabled: Boolean = true,
         override val name: String = "ChatGPT",
@@ -286,6 +299,7 @@ sealed class ProviderSetting {
     @Serializable
     @SerialName("grok")
     data class Grok(
+        override val proxy: ProviderProxy = ProviderProxy(),
         override val id: Uuid = Uuid.random(),
         override val enabled: Boolean = true,
         override val name: String = "Grok",

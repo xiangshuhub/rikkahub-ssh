@@ -32,8 +32,33 @@ class WorkspaceDetailVM(
     private val id: String,
     private val repository: WorkspaceRepository,
     private val terminalSessionManager: WorkspaceTerminalSessionManager,
+    private val browserPreferences: WorkspaceBrowserPreferences,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(WorkspaceDetailState())
+    private val initialLocation = browserPreferences.lastLocation(id) ?: WorkspaceBrowserLocation()
+    private val _state = MutableStateFlow(WorkspaceDetailState(
+        area = initialLocation.storageArea(), path = initialLocation.path, loading = true,
+    ))
+    private var refreshJob: Job? = null
+    private val _bookmarks = MutableStateFlow(browserPreferences.bookmarks(id))
+    val bookmarks = _bookmarks.asStateFlow()
+    private val _browserNotice = MutableStateFlow<String?>(null)
+    val browserNotice = _browserNotice.asStateFlow()
+
+    fun dismissBrowserNotice() { _browserNotice.value = null }
+
+    fun saveBookmark(location: WorkspaceBrowserLocation, name: String) {
+        _bookmarks.value = browserPreferences.saveBookmark(id, location, name)
+    }
+
+    fun removeBookmark(location: WorkspaceBrowserLocation) {
+        _bookmarks.value = browserPreferences.removeBookmark(id, location)
+    }
+
+    fun openBookmark(location: WorkspaceBrowserLocation) {
+        if (!location.isValid()) return
+        _state.update { it.copy(area = location.storageArea(), path = location.path, entries = emptyList(), error = null) }
+        refresh()
+    }
     val state = _state.asStateFlow()
 
     private var pendingExport: Pair<WorkspaceStorageArea, List<WorkspaceFileEntry>>? = null
@@ -128,7 +153,7 @@ class WorkspaceDetailVM(
 
     init {
         loadWorkspace()
-        refresh()
+        refresh(restore = true)
     }
 
     fun selectArea(area: WorkspaceStorageArea) {
@@ -140,17 +165,6 @@ class WorkspaceDetailVM(
                 error = null,
             )
         }
-        refresh()
-    }
-
-    suspend fun openInitialDirectory(cwd: String) {
-        if (cwd.isBlank()) return
-        val layout = repository.layout(id) ?: return
-        val root = layout.workspaceDir.trimEnd('/')
-        val inside = !cwd.startsWith('/') || root.isEmpty() || cwd == root || cwd.startsWith("$root/")
-        val area = if (inside) WorkspaceStorageArea.FILES else WorkspaceStorageArea.LINUX
-        val path = if (!cwd.startsWith('/')) cwd else if (inside) cwd.removePrefix(root).trimStart('/') else cwd.trimStart('/')
-        _state.update { it.copy(area = area, path = path, entries = emptyList(), error = null) }
         refresh()
     }
 
@@ -173,29 +187,38 @@ class WorkspaceDetailVM(
         refresh()
     }
 
-    private var refreshJob: Job? = null
-
-    fun refresh() {
+    fun refresh(restore: Boolean = false) {
         // 远程工作区列目录要走网络, 快速切换目录时旧请求可能晚到, 只保留最新一次
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
-                val entries = repository.listFiles(
-                    id = id,
-                    area = state.value.area,
-                    path = state.value.path,
-                )
+                val location = WorkspaceBrowserLocation(state.value.area.name, state.value.path)
+                val entries = repository.listFiles(id = id, area = location.storageArea(), path = location.path)
+                ensureActive()
+                browserPreferences.saveLocation(id, location)
                 _state.update { it.copy(entries = entries, loading = false) }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                _state.update {
-                    it.copy(
-                        entries = emptyList(),
-                        loading = false,
-                        error = error.message ?: "加载工作区文件失败",
-                    )
+                ensureActive()
+                if (restore && initialLocation != WorkspaceBrowserLocation()) {
+                    _browserNotice.value = "无法恢复上次浏览目录，正在尝试工作空间目录。原目录可能已删除或无法访问。"
+                    _state.update { it.copy(area = WorkspaceStorageArea.FILES, path = "", entries = emptyList()) }
+                    // Leave the last successful location untouched if the fallback also fails (e.g. offline).
+                    try {
+                        val entries = repository.listFiles(id, WorkspaceStorageArea.FILES, "")
+                        ensureActive()
+                        browserPreferences.saveLocation(id, WorkspaceBrowserLocation())
+                        _state.update { it.copy(entries = entries, loading = false, error = null) }
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (fallback: Exception) {
+                        ensureActive()
+                        _state.update { it.copy(loading = false, error = fallback.message ?: "加载工作区文件失败") }
+                    }
+                } else {
+                    _state.update { it.copy(entries = emptyList(), loading = false, error = error.message ?: "加载工作区文件失败") }
                 }
             }
         }

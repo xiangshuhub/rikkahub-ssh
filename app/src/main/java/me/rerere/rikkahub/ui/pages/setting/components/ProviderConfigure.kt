@@ -170,7 +170,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         else -> error("Unsupported provider type: $type")
     }
     // 沿用用户配的额度查询
-    return source?.let { converted.withQuotaQuery(it.quotaQuery) } ?: converted
+    return (source?.let { converted.withQuotaQuery(it.quotaQuery) } ?: converted).withProxy(proxy)
 }
 
 internal fun ProviderSetting.ApiKey.defaultBaseUrlForReset(): String {

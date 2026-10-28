@@ -13,9 +13,9 @@
 
 ## 发布状态
 
-当前正式版 **v3.1.3**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.3) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.3)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
+当前正式版 **v3.1.5**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.5) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.5)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
 
-v3.1.3 更新：Gitee 优先的更新检查（失败自动尝试 GitHub）、App 内离线保存微信收款码、新官网及分享链接、新的自适应应用图标。旧版 v3.1.2 若无法检查更新，请先手动覆盖安装一次。
+v3.1.5 更新：供应商独立 SOCKS5 代理、SSH 同名专属助手、目录历史与书签、独立应用管理助手、工作空间入口优化、余额查询修正及工具授权简化。详见 [代理](docs/provider-proxy.md)、[工作空间助手](docs/workspace-assistant.md) 和 [文件浏览器](docs/workspace-browser.md) 文档。版本号跳过 v3.1.4；旧版可覆盖升级，升级前请备份。
 
 | 构建 | 应用 ID |
 | --- | --- |
@@ -50,12 +50,13 @@ SSH 与本地工作空间均提供：`workspace_read_file`、`workspace_write_fi
 
 ### AI 应用管理
 
-设置 → 工具授权 → AI 应用管理，各权限默认关闭：
+使用内置“应用管理助手”，在其详情页可启用/停用管理能力（默认启用）。普通助手不携带这些工具；旧的全局管理授权已停用：
 
 - 助手查询、新建、修改提示词/模型、绑定 Skill/MCP。
 - Skill 查询、新建、编辑、删除；内置 Skill 只读，编辑保留附件，修改前备份。
 - MCP 列表、新建、删除；新建默认禁用，凭据、登录与启用由用户在设置中处理。
-- 助手工作空间绑定查询、绑定、切换、解绑；需要同时开启助手管理和绑定管理权限。
+- 助手工作空间绑定查询、绑定、切换、解绑；不创建/删除服务器或操作远端文件。
+- 管理助手仅拥有管理工具，不提供搜索、SSH/shell、Skill 执行、记忆或外部 MCP 工具。改名不影响身份，复制不继承管理权限。
 - 所有管理修改必须逐次确认，**全局自动批准不能绕过**；版本或影响范围变化后必须重新确认。
 - 助手配置修改仅影响全局配置和新对话，不自动改写当前聊天快照或切换正在执行的任务。
 

@@ -52,6 +52,9 @@ data class Assistant(
     val enableTimeReminder: Boolean = false, // 时间间隔提醒注入
     val timeReminderIntervalMinutes: Int = 60, // 时间提醒间隔（分钟，至少 1 分钟）
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
+    val subagentMode: me.rerere.rikkahub.subagent.SubagentMode = me.rerere.rikkahub.subagent.SubagentMode.INHERIT,
+    // Legacy per-assistant config retained for explicit import. Runtime turns inject the effective global snapshot here.
+    val subagents: me.rerere.rikkahub.subagent.SubagentSettings = me.rerere.rikkahub.subagent.SubagentSettings(),
     val managementEnabled: Boolean = true, // Only meaningful for the reserved built-in management assistant; human-controlled.
 )
 

@@ -44,6 +44,25 @@ class OAuthLoopbackCallbackServerTest {
         }
     }
 
+    @Test
+    fun `OpenRouter callback authenticates a random path without a state query`() = runBlocking {
+        val server = OAuthLoopbackCallbackServer(stateInPath = true)
+        val session = server.openSession("random-session-secret")
+        try {
+            assertTrue(session.redirectUri.endsWith("/random-session-secret"))
+            execute(session.redirectUri.replace("random-session-secret", "wrong") + "?code=wrong").use {
+                assertEquals(400, it.code)
+            }
+            execute("${session.redirectUri}?code=openrouter-code").use { assertEquals(200, it.code) }
+            val result = session.awaitCallback(2.seconds)
+            assertEquals("openrouter-code", result?.code)
+            assertEquals("random-session-secret", result?.state)
+            execute("${session.redirectUri}?code=replayed").use { assertEquals(409, it.code) }
+        } finally {
+            session.close()
+        }
+    }
+
     private fun execute(url: String) = httpClient.newCall(
         Request.Builder()
             .url(url)

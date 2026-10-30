@@ -18,6 +18,9 @@ data class OAuthCredential(
     // 以下仅用于界面展示
     val email: String? = null,
     val plan: String? = null,
+    // Meta returns quota only while minting its inference key. Never mint a key just to poll quota.
+    val quotaSnapshot: kotlinx.serialization.json.JsonObject? = null,
+    val quotaSnapshotAt: Long = 0L,
 ) {
     override fun toString(): String =
         "OAuthCredential(accessToken=${accessToken.masked()}, refreshToken=${refreshToken?.masked()}, " +
@@ -45,6 +48,7 @@ val ProviderSetting.supportsBuiltInSearch: Boolean
         is ProviderSetting.OpenAI -> useResponseApi
         is ProviderSetting.Google -> true
         is ProviderSetting.Claude -> true
+        is ProviderSetting.Subscription -> service == AccountService.CLAUDE
         is ProviderSetting.Account -> true
     }
 
@@ -63,6 +67,7 @@ sealed class ProviderSetting {
         is Claude -> copy(proxy = proxy)
         is ChatGPT -> copy(proxy = proxy)
         is Grok -> copy(proxy = proxy)
+        is Subscription -> copy(proxy = proxy)
     }
 
     abstract val builtIn: Boolean
@@ -333,6 +338,34 @@ sealed class ProviderSetting {
                 shortDescription = shortDescription,
             )
         }
+    }
+
+    @Serializable
+    @SerialName("subscription")
+    data class Subscription(
+        val service: AccountService,
+        override val proxy: ProviderProxy = ProviderProxy(),
+        override val id: Uuid = Uuid.random(),
+        override val enabled: Boolean = true,
+        override val name: String = service.displayName,
+        override val models: List<Model> = emptyList(),
+        override val customHeaders: List<CustomHeader> = emptyList(),
+        @Transient override val builtIn: Boolean = false,
+        @Transient override val description: @Composable (() -> Unit) = {},
+        @Transient override val shortDescription: @Composable (() -> Unit) = {},
+        override val credential: OAuthCredential? = null,
+    ) : Account() {
+        override fun withCredential(credential: OAuthCredential?): Account = copy(credential = credential)
+
+        override fun copyProvider(
+            id: Uuid, enabled: Boolean, name: String, models: List<Model>,
+            customHeaders: List<CustomHeader>, builtIn: Boolean,
+            description: @Composable (() -> Unit), shortDescription: @Composable (() -> Unit),
+        ): ProviderSetting = copy(
+            id = id, enabled = enabled, name = name, models = models,
+            customHeaders = customHeaders, builtIn = builtIn,
+            description = description, shortDescription = shortDescription,
+        )
     }
 
     companion object {

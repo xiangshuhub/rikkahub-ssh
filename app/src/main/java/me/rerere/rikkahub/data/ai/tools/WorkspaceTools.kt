@@ -28,6 +28,8 @@ private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
+    "workspace_list_files" to false,
+    "workspace_search" to false,
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
@@ -54,6 +56,7 @@ suspend fun createWorkspaceTools(
 
     return buildList {
         add(createReadFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
+        addAll(createWorkspaceDiscoveryTools(workspaceId, layout, workspaceRepository, ::needsApproval, cwd))
         if (workspace.capabilities().fileWriteTools) {
             add(createWriteFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
             add(createEditFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))

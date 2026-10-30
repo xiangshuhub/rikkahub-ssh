@@ -58,6 +58,7 @@ data class Settings(
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
+    val subagents: me.rerere.rikkahub.subagent.SubagentSettings = me.rerere.rikkahub.subagent.SubagentSettings(enabled = true),
     val retiredAssistantProfiles: List<Assistant> = emptyList(), // Hidden legacy profiles; keep old chats and backups intact.
     val assistantTags: List<Tag> = emptyList(),
     val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),

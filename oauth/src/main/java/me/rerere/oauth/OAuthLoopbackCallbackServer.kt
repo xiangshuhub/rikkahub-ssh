@@ -44,6 +44,8 @@ class OAuthLoopbackCallbackServer(
     private val port: Int = 0,
     callbackPath: String = "/oauth/callback",
     private val redirectHost: String = "localhost",
+    // Providers such as OpenRouter do not echo state; use an unguessable callback path instead.
+    private val stateInPath: Boolean = false,
 ) {
     private class CallbackRegistration {
         val result = CompletableDeferred<OAuthCallback>()
@@ -85,6 +87,7 @@ class OAuthLoopbackCallbackServer(
         foregroundServiceContext: Context?,
     ): OAuthLoopbackCallbackSession {
         require(expectedState.isNotBlank()) { "OAuth state 不能为空" }
+        require(!stateInPath || expectedState.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid callback path state" }
         val registration = CallbackRegistration()
         return lifecycleMutex.withLock {
             foregroundServiceContext?.let { localizedContext = it }
@@ -102,7 +105,7 @@ class OAuthLoopbackCallbackServer(
                     ) { "无法启动 OAuth 回调前台服务" }
                 }
                 OAuthLoopbackCallbackSession(
-                    redirectUri = uri,
+                    redirectUri = if (stateInPath) "$uri/$expectedState" else uri,
                     expectedState = expectedState,
                     callback = registration.result,
                     foregroundServiceContext = foregroundServiceContext,
@@ -124,7 +127,7 @@ class OAuthLoopbackCallbackServer(
 
         val newServer = embeddedServer(CIO, host = LOOPBACK_HOST, port = port) {
             routing {
-                get(callbackPath) {
+                get(if (stateInPath) "$callbackPath/{oauthState}" else callbackPath) {
                     handleCallback(call)
                 }
             }
@@ -144,7 +147,7 @@ class OAuthLoopbackCallbackServer(
 
     private suspend fun handleCallback(call: ApplicationCall) {
         call.response.header(HttpHeaders.CacheControl, "no-store")
-        val state = call.request.queryParameters["state"]
+        val state = if (stateInPath) call.parameters["oauthState"] else call.request.queryParameters["state"]
         val registration = state?.let(callbacks::get)
         if (state.isNullOrBlank() || registration == null) {
             call.respondText(

@@ -35,8 +35,14 @@ import me.rerere.hugeicons.stroke.MessageQuestion
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.subagent.SubagentMode
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
+import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.isAppManagementAssistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -60,6 +66,7 @@ fun AssistantLocalToolPage(id: String) {
         }
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -81,6 +88,7 @@ fun AssistantLocalToolPage(id: String) {
         AssistantLocalToolContent(
             innerPadding = innerPadding,
             assistant = assistant,
+            globalSubagentsEnabled = settings.subagents.enabled,
             onUpdate = { vm.update(it) }
         )
     }
@@ -90,9 +98,11 @@ fun AssistantLocalToolPage(id: String) {
 private fun AssistantLocalToolContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
+    globalSubagentsEnabled: Boolean,
     onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
+    val navController = LocalNavController.current
     val toaster = LocalToaster.current
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
@@ -173,6 +183,17 @@ private fun AssistantLocalToolContent(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (!assistant.isAppManagementAssistant) CardGroup(title = { Text("子代理") }) {
+            formItem(headlineContent = { Text("本助手使用方式") },
+                supportingContent = { Text("当前全局：${if (globalSubagentsEnabled) "开启" else "关闭"}。角色、模型与运行参数统一在全局设置中配置。") }) {
+                ConnectedChoiceButtons(options = SubagentMode.entries, selected = assistant.subagentMode,
+                    onSelect = { onUpdate(assistant.copy(subagentMode = it)) }) { mode, selected ->
+                    ConnectedChoiceLabel(if (mode == SubagentMode.INHERIT) "跟随全局" else "禁用", selected)
+                }
+            }
+            item(onClick = { navController.navigate(Screen.SettingSubagents) },
+                headlineContent = { Text("打开全局子代理设置") })
+        }
         CardGroup {
             toolItem(
                 option = LocalToolOption.JavascriptEngine,

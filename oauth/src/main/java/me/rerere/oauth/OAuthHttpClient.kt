@@ -266,10 +266,15 @@ class OAuthHttpClient(
             val (code, body) = withContext(Dispatchers.IO) {
                 executeRaw(httpRequest).use { it.code to it.body.string() }
             }
-            if (code in 200..299) return json.decodeFromString(TokenResponse.serializer(), body)
+            // GitHub returns authorization_pending / slow_down with HTTP 200.
             val error = runCatching {
                 json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
+            if (code in 200..299 && error == null) {
+                return json.decodeFromString(TokenResponse.serializer(), body).also {
+                    require(it.accessToken.isNotBlank()) { "Missing access token" }
+                }
+            }
             when (error) {
                 "authorization_pending" -> {}
                 "slow_down" -> interval += 5
@@ -277,7 +282,7 @@ class OAuthHttpClient(
                 "expired_token" -> throw DeviceAuthorizationException(error, "Device code expired")
                 else -> throw DeviceAuthorizationException(
                     error ?: "http_$code",
-                    "HTTP $code for ${request.tokenEndpoint}: ${body.take(300)}",
+                    "Device authorization failed (HTTP $code)",
                 )
             }
         }
@@ -298,7 +303,8 @@ class OAuthHttpClient(
         executeRaw(request).use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code} for ${request.url}: ${body.take(300)}")
+                // Token endpoints may echo credentials. Do not expose response bodies or URL queries.
+                throw IOException("OAuth HTTP ${response.code} at ${request.url.host}${request.url.encodedPath}")
             }
             return body
         }

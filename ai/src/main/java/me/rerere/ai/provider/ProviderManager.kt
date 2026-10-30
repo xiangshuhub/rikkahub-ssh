@@ -1,6 +1,7 @@
 package me.rerere.ai.provider
 
 import android.content.Context
+import me.rerere.ai.provider.providers.SubscriptionProvider
 import me.rerere.ai.provider.providers.chatgpt.ChatGPTProvider
 import me.rerere.ai.provider.providers.claude.ClaudeProvider
 import me.rerere.ai.provider.providers.google.GoogleProvider
@@ -28,6 +29,7 @@ class ProviderManager(
         registerProvider("claude", ClaudeProvider(client, context))
         registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials))
         registerProvider("grok", GrokProvider(client, accountCredentials))
+        registerProvider("subscription", SubscriptionProvider(client, context, accountCredentials))
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -37,6 +39,7 @@ class ProviderManager(
         is ProviderSetting.Claude -> ClaudeProvider(transport, context)
         is ProviderSetting.ChatGPT -> ChatGPTProvider(transport, accountCredentials)
         is ProviderSetting.Grok -> GrokProvider(transport, accountCredentials)
+        is ProviderSetting.Subscription -> SubscriptionProvider(transport, context, accountCredentials)
     } as Provider<T>
 
     /**
@@ -92,6 +95,7 @@ class ProviderManager(
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ChatGPT -> getProvider("chatgpt")
             is ProviderSetting.Grok -> getProvider("grok")
+            is ProviderSetting.Subscription -> getProvider("subscription")
         } as Provider<T>
     }
 }

@@ -102,6 +102,12 @@ val appModule = module {
         )
     }
 
+    single(createdAtStart = true) {
+        me.rerere.rikkahub.subagent.SubagentService(
+            context = get(), scope = get(), settingsStore = get(), providers = get(), usage = get(),
+        )
+    }
+
     single {
         ChatRequestFactory(
             context = get(),
@@ -111,6 +117,7 @@ val appModule = module {
             memoryRepository = get(),
             templateTransformer = get(),
             workspaceRepository = get(),
+            subagentService = get(),
         )
     }
 

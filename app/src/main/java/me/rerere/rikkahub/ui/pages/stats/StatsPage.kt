@@ -719,6 +719,8 @@ private fun sourceLabel(source: SourceUsage): String {
     return stringResource(
         when (usageSource) {
             UsageSource.CHAT -> R.string.stats_page_source_chat
+            UsageSource.SUBAGENT -> return "子代理"
+            UsageSource.SUBAGENT_SUMMARY -> return "子代理自动汇总"
             UsageSource.COMPRESSION -> R.string.stats_page_source_compression
             UsageSource.TITLE -> R.string.stats_page_source_title
             UsageSource.SUGGESTION -> R.string.stats_page_source_suggestion

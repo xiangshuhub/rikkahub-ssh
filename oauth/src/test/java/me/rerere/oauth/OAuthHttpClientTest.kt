@@ -23,6 +23,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.util.concurrent.Executors
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class OAuthHttpClientTest {
     private val client = OAuthHttpClient(OkHttpClient())
 
@@ -173,6 +174,27 @@ class OAuthHttpClientTest {
             "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=device&client_id=client",
             requests.first().bodyString(),
         )
+    }
+
+    @Test
+    fun `github device polling handles errors inside successful HTTP responses`() = runTest {
+        val requests = mutableListOf<Request>()
+        val client = deviceTokenClient(
+            200 to """{"error":"authorization_pending"}""",
+            200 to """{"error":"slow_down"}""",
+            200 to """{"access_token":"github-token"}""",
+            requests = requests,
+        )
+        assertEquals("github-token", client.awaitDeviceToken(deviceTokenRequest, authorization).accessToken)
+        assertEquals(20_000L, currentTime)
+        assertEquals(3, requests.size)
+    }
+
+    @Test
+    fun `HTTP 200 denial is not treated as a token`() = runTest {
+        val client = deviceTokenClient(200 to """{"error":"access_denied"}""", requests = mutableListOf())
+        val error = runCatching { client.awaitDeviceToken(deviceTokenRequest, authorization) }.exceptionOrNull()
+        assertEquals("access_denied", (error as OAuthHttpClient.DeviceAuthorizationException).error)
     }
 
     @Test

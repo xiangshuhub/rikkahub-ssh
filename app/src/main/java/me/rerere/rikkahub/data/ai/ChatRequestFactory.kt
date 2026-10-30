@@ -17,6 +17,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.subagent.subagentSettingsFor
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkahub.data.model.isAppManagementAssistant
 import me.rerere.rikkahub.data.model.managementOnly
@@ -68,6 +69,11 @@ class ChatTurnContext(
     val workspaceCwd: String?,
     val memories: List<MemoryFile>,
     val tools: List<Tool>,
+    val childHistory: MutableStateFlow<List<UIMessage>> = MutableStateFlow(emptyList()),
+    val capabilityTools: List<Tool> = tools,
+    val automation: Boolean = false,
+    val childInvocation: MutableStateFlow<String?> = MutableStateFlow(null),
+    val workspaceIdentity: String? = null,
 )
 
 /** 把会话变成发给模型的请求：系统提示词、上下文裁剪、输入输出转换都在这里 */
@@ -79,6 +85,7 @@ class ChatRequestFactory(
     private val memoryRepository: MemoryRepository,
     templateTransformer: TemplateTransformer,
     workspaceRepository: WorkspaceRepository,
+    private val subagentService: me.rerere.rikkahub.subagent.SubagentService,
 ) {
     private val inputTransformers: List<InputMessageTransformer> = listOf(
         TimeReminderTransformer,
@@ -99,12 +106,23 @@ class ChatRequestFactory(
     /** 解析本轮的助手、模型、记忆和工具；MCP 服务名不合法时抛出 InvalidMcpServerNamesException */
     suspend fun createContext(settings: Settings, conversation: Conversation): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
-        val assistant = settings.getAssistantOf(conversation).managementOnly()
+        val baseAssistant = settings.getAssistantOf(conversation).managementOnly()
+        val assistant = baseAssistant.copy(subagents = settings.subagentSettingsFor(baseAssistant))
         val configuredModel = settings.getChatModelOf(conversation)
             ?: throw IllegalStateException("No chat model selected")
         // Native provider tools (search/code execution) are excluded too, not just custom tools.
-        val model = if (assistant.isAppManagementAssistant) configuredModel.copy(tools = emptySet()) else configuredModel
+        val automaticMessage = conversation.currentMessages.lastOrNull { it.role == me.rerere.ai.core.MessageRole.USER }
+        val automatic = automaticMessage?.automationKey != null
+        require(!automatic || automaticMessage?.automationOwnerId == null || automaticMessage.automationOwnerId == assistant.id) { "Automatic child event belongs to the previous assistant" }
+        val model = if (assistant.isAppManagementAssistant || automatic) configuredModel.copy(tools = emptySet()) else configuredModel
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
+        val baseTools = chatToolFactory.createTools(settings, assistant, model, conversation.workspaceCwd)
+        val childHistory = MutableStateFlow(conversation.currentMessages)
+        val childInvocation = MutableStateFlow<String?>(null)
+        val workspaceIdentity = if (assistant.subagents.enabled) subagentService.workspaceIdentity(assistant.workspaceId) else null
+        val subagentTools = subagentService.tools(assistant, model, conversation.id, baseTools,
+            history = { childHistory.value }, workspaceCwd = conversation.workspaceCwd, controlOnly = automatic,
+            invocation = { childInvocation.value }, workspaceIdentity = workspaceIdentity)
         return ChatTurnContext(
             settings = settings,
             assistant = assistant,
@@ -114,14 +132,16 @@ class ChatRequestFactory(
             conversationSystemPrompt = conversation.customSystemPrompt,
             workspaceCwd = conversation.workspaceCwd,
             memories = if (assistant.enableMemory) memoryRepository.getFiles(assistant.memoryId) else emptyList(),
-            tools = chatToolFactory.createTools(
-                settings = settings,
-                assistant = assistant,
-                model = model,
-                workspaceCwd = conversation.workspaceCwd,
-            ),
+            tools = (if (automatic) emptyList() else baseTools) + subagentTools,
+            childHistory = childHistory,
+            capabilityTools = baseTools,
+            automation = automatic,
+            childInvocation = childInvocation,
+            workspaceIdentity = workspaceIdentity,
         )
     }
+
+    suspend fun cancelSubagents(conversationId: Uuid) = subagentService.cancelConversation(conversationId)
 
     /**
      * 本轮交给 runAgent 的请求和钩子。[messages] 的最后一条是助手消息时从它继续，否则新建一条助手消息。
@@ -135,16 +155,34 @@ class ChatRequestFactory(
         val request = AgentRequest(
             provider = usageRecorder.wrap(
                 providerManager.getProviderByType(turn.providerSetting),
-                UsageTag(UsageSource.CHAT, turn.assistant.id, turn.conversationId),
+                UsageTag(if (turn.automation) UsageSource.SUBAGENT_SUMMARY else UsageSource.CHAT, turn.assistant.id, turn.conversationId),
             ),
             providerSetting = turn.providerSetting,
             messages = messages,
             tools = turn.tools,
             stream = turn.assistant.streamOutput,
-            retry = turn.settings.retryPolicy(),
+            maxSteps = if (turn.automation) 8 else 256,
+            retry = if (turn.automation) RetryPolicy.NONE else turn.settings.retryPolicy(),
         )
         val hooks = object : AgentHooks {
+            private fun publishChildHistory(message: UIMessage) {
+                val previous = turn.childHistory.value
+                turn.childHistory.value = if (previous.lastOrNull()?.id == message.id) previous.dropLast(1) + message else previous + message
+            }
+
+            override suspend fun beforeToolExecution(message: UIMessage, tool: me.rerere.ai.ui.UIMessagePart.Tool) {
+                if (turn.automation) subagentService.requireParentOwner(me.rerere.rikkahub.subagent.SubagentOwner(turn.assistant.id, turn.conversationId))
+                turn.childInvocation.value = tool.toolCallId
+                publishChildHistory(message)
+            }
+
+            override suspend fun afterToolExecution(message: UIMessage, tool: me.rerere.ai.ui.UIMessagePart.Tool) {
+                publishChildHistory(message)
+            }
+
             override suspend fun prepareStep(messages: List<UIMessage>): StepRequest {
+                if (turn.automation) subagentService.requireParentOwner(me.rerere.rikkahub.subagent.SubagentOwner(turn.assistant.id, turn.conversationId))
+                turn.childHistory.value = messages
                 Log.i(TAG, "prepareStep: ${turn.model.id}")
                 return buildStep(turn, messages, processingStatus)
             }
@@ -244,14 +282,14 @@ class ChatRequestFactory(
             model = turn.model,
             temperature = assistant.temperature,
             topP = assistant.topP,
-            maxTokens = assistant.maxTokens,
+            maxTokens = if (turn.automation) minOf(assistant.maxTokens ?: 2048, 2048) else assistant.maxTokens,
             tools = turn.tools,
             reasoningLevel = assistant.reasoningLevel,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(turn.model.customHeaders)
             },
-            customBody = buildList {
+            customBody = if (turn.automation) emptyList() else buildList {
                 addAll(assistant.customBodies)
                 addAll(turn.model.customBodies)
             },

@@ -133,6 +133,7 @@ class SettingsStore internal constructor(
         // 助手
         val SELECT_ASSISTANT = stringPreferencesKey("select_assistant")
         val ASSISTANTS = stringPreferencesKey("assistants")
+        val SUBAGENT_SETTINGS = stringPreferencesKey("subagent_settings")
         val RETIRED_ASSISTANT_PROFILES = stringPreferencesKey("retired_assistant_profiles")
         val ASSISTANT_TAGS = stringPreferencesKey("assistant_tags")
 

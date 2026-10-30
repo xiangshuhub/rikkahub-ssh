@@ -27,6 +27,10 @@ data class AgentRequest(
 
 /** 调用方在循环各个节点上的介入点 */
 interface AgentHooks {
+    /** Durable child checkpoints may record intent before a side effect and completion afterwards. */
+    suspend fun beforeToolExecution(message: UIMessage, tool: me.rerere.ai.ui.UIMessagePart.Tool) {}
+    suspend fun afterToolExecution(message: UIMessage, tool: me.rerere.ai.ui.UIMessagePart.Tool) {}
+
     /**
      * 每次请求模型之前调用，返回这一步实际发出的消息和参数，系统提示词、上下文裁剪、输入转换都在这里做。
      *

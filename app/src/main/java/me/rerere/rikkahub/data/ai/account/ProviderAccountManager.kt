@@ -1,6 +1,13 @@
 package me.rerere.rikkahub.data.ai.account
 
 import android.content.Context
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeout
+import me.rerere.ai.provider.AccountService
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +30,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.await
 import me.rerere.oauth.CustomTabsOAuthAuthorizationLauncher
 import me.rerere.oauth.OAuthHttpClient
+import me.rerere.oauth.withOAuthForegroundSession
 import me.rerere.oauth.OAuthLoopbackCallbackServer
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -44,6 +52,8 @@ sealed interface AccountLoginStatus {
 
     /** 设备码登录：用户在浏览器里打开 [verificationUrl] 确认 [userCode] */
     data class DeviceCode(val userCode: String, val verificationUrl: String) : AccountLoginStatus
+
+    data class Browser(val authorizationUrl: String) : AccountLoginStatus
 
     data class Failed(val message: String) : AccountLoginStatus
 }
@@ -73,40 +83,59 @@ class ProviderAccountManager(
         redirectHost = ChatGPTAuth.CALLBACK_HOST,
     )
     private val loginJobs = ConcurrentHashMap<Uuid, Job>()
+    private val loginAttempts = ConcurrentHashMap<Uuid, Uuid>()
     private val refreshLocks = ConcurrentHashMap<Uuid, Mutex>()
+    private val manualCodes = ConcurrentHashMap<Uuid, CompletableDeferred<String>>()
+
+    fun submitAuthorizationCode(providerId: Uuid, input: String) {
+        if (input.isNotBlank()) manualCodes[providerId]?.complete(input.trim())
+    }
 
     private val _loginStatus = MutableStateFlow<Map<Uuid, AccountLoginStatus>>(emptyMap())
     val loginStatus: StateFlow<Map<Uuid, AccountLoginStatus>> = _loginStatus.asStateFlow()
 
-    fun startLogin(providerId: Uuid, context: Context) {
+    fun startLogin(providerId: Uuid, context: Context, copyCode: Boolean = false) {
         val provider = findAccount(providerId) ?: return
         loginJobs.remove(providerId)?.cancel()
+        val attempt = Uuid.random()
+        loginAttempts[providerId] = attempt
         setStatus(providerId, AccountLoginStatus.Authorizing)
         val job = appScope.launch {
             try {
-                val credential = withOAuth(provider) { oauth ->
-                    when (provider) {
-                        is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext, oauth)
-                        is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext, oauth)
+                val credential = withOAuthForegroundSession(context.applicationContext) {
+                    withOAuth(provider) { oauth ->
+                        when (provider) {
+                            is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext, oauth)
+                            is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext, oauth)
+                            is ProviderSetting.Subscription -> loginSubscription(provider, context.applicationContext, copyCode)
+                        }
                     }
                 }
-                persistCredential(providerId, credential)
-                setStatus(providerId, null)
+                persistCredential(providerId, credential, attempt)
+                if (loginAttempts[providerId] == attempt) setStatus(providerId, null)
+            } catch (e: TimeoutCancellationException) {
+                if (loginAttempts[providerId] == attempt) {
+                    setStatus(providerId, AccountLoginStatus.Failed("Authorization timed out; please try again"))
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Login failed for ${provider.name}", e)
-                setStatus(
+                if (loginAttempts[providerId] == attempt) setStatus(
                     providerId,
                     AccountLoginStatus.Failed(e.message ?: e.javaClass.simpleName)
                 )
             }
         }
         loginJobs[providerId] = job
-        job.invokeOnCompletion { loginJobs.remove(providerId, job) }
+        job.invokeOnCompletion {
+            loginJobs.remove(providerId, job)
+            loginAttempts.remove(providerId, attempt)
+        }
     }
 
     fun cancelLogin(providerId: Uuid) {
+        loginAttempts.remove(providerId)
         loginJobs.remove(providerId)?.cancel()
         setStatus(providerId, null)
     }
@@ -160,6 +189,9 @@ class ProviderAccountManager(
                             token = oauthClient.refreshToken(GrokAuth.refreshRequest(refreshToken)),
                             previous = credential,
                         )
+                        is ProviderSetting.Subscription -> withSubscriptionClient(latest) {
+                            SubscriptionAuth.refresh(it, latest.service, credential)
+                        }
                     }
                 }
             } catch (e: CancellationException) {
@@ -175,6 +207,81 @@ class ProviderAccountManager(
                 error("${latest.name}: sign-in changed during refresh, please try again")
             }
             refreshed
+        }
+    }
+
+    private suspend fun <T> withSubscriptionClient(provider: ProviderSetting.Subscription, block: suspend (OkHttpClient) -> T): T {
+        val routed = client.withProviderProxy(provider.proxy)
+        val transport = routed.newBuilder().followRedirects(false).followSslRedirects(false).build()
+        try {
+            return block(transport)
+        } finally {
+            if (routed !== client) routed.connectionPool.evictAll()
+        }
+    }
+
+    private suspend fun loginSubscription(provider: ProviderSetting.Subscription, context: Context, copyCode: Boolean): OAuthCredential =
+        withContext(Dispatchers.IO) {
+            withSubscriptionClient(provider) { transport ->
+                val oauth = OAuthHttpClient(transport)
+                if (provider.service == AccountService.CLAUDE || provider.service == AccountService.OPENROUTER) {
+                    loginSubscriptionBrowser(provider, context, transport, oauth, copyCode)
+                } else {
+                    val authorization = oauth.requestDeviceAuthorization(SubscriptionAuth.deviceRequest(provider.service))
+                    val url = authorization.verificationUriComplete ?: authorization.verificationUri
+                    require(url.toHttpUrl().isHttps) { "Invalid verification URL" }
+                    setStatus(provider.id, AccountLoginStatus.DeviceCode(authorization.userCode, url))
+                    withContext(Dispatchers.Main) { CustomTabsOAuthAuthorizationLauncher.launch(context, url) }
+                    val token = oauth.awaitDeviceToken(SubscriptionAuth.deviceTokenRequest(provider.service, authorization.deviceCode), authorization)
+                    SubscriptionAuth.finishDevice(transport, provider.service, token)
+                }
+            }
+        }
+
+    private suspend fun loginSubscriptionBrowser(
+        provider: ProviderSetting.Subscription, context: Context, transport: OkHttpClient,
+        oauth: OAuthHttpClient, copyCode: Boolean,
+    ): OAuthCredential = coroutineScope {
+        val pkce = oauth.generatePkce()
+        val isClaude = provider.service == AccountService.CLAUDE
+        val state = if (isClaude) pkce.verifier else oauth.generateState()
+        val session = if (isClaude && copyCode) null else OAuthLoopbackCallbackServer(
+            callbackPath = if (isClaude) "/callback" else "/oauth/callback",
+            stateInPath = !isClaude,
+        ).openSession(context, state)
+        val manual = CompletableDeferred<String>()
+        manualCodes[provider.id] = manual
+        try {
+            val redirect = session?.redirectUri ?: SubscriptionAuth.CLAUDE_COPY_REDIRECT
+            val url = if (isClaude) oauth.buildAuthorizationUrl(OAuthHttpClient.AuthorizationRequest(
+                authorizationEndpoint = "https://claude.ai/oauth/authorize",
+                clientId = SubscriptionAuth.CLAUDE_CLIENT, redirectUri = redirect,
+                pkce = pkce, state = state, scope = SubscriptionAuth.CLAUDE_SCOPE,
+                additionalParameters = mapOf("code" to "true"),
+            )) else "https://openrouter.ai/auth".toHttpUrl().newBuilder()
+                .addQueryParameter("callback_url", redirect)
+                .addQueryParameter("code_challenge", pkce.challenge)
+                .addQueryParameter("code_challenge_method", "S256").build().toString()
+            setStatus(provider.id, AccountLoginStatus.Browser(url))
+            withContext(Dispatchers.Main) { CustomTabsOAuthAuthorizationLauncher.launch(context, url) }
+            val callback = session?.let { async {
+                val result = it.awaitCallback(AUTHORIZATION_TIMEOUT) ?: error("Authorization timed out")
+                check(result.error == null) { "Authorization denied" }
+                result.code ?: error("Missing authorization code")
+            } }
+            val code = try {
+                withTimeout(AUTHORIZATION_TIMEOUT) {
+                    select {
+                        callback?.onAwait { it }
+                        manual.onAwait { parseAuthorizationInput(it, state) }
+                    }
+                }
+            } finally { callback?.cancel() }
+            SubscriptionAuth.exchangeBrowser(transport, provider.service, code, state, pkce, redirect)
+        } finally {
+            manualCodes.remove(provider.id, manual)
+            manual.cancel()
+            withContext(NonCancellable) { session?.close() }
         }
     }
 
@@ -248,8 +355,9 @@ class ProviderAccountManager(
         }
     }.onFailure { Log.w(TAG, "Failed to fetch Grok userinfo", it) }.getOrNull()
 
-    private suspend fun persistCredential(providerId: Uuid, credential: OAuthCredential?) {
+    private suspend fun persistCredential(providerId: Uuid, credential: OAuthCredential?, attempt: Uuid? = null) {
         settingsStore.update { old ->
+            if (attempt != null && loginAttempts[providerId] != attempt) return@update old
             old.copy(
                 providers = old.providers.map { provider ->
                     if (provider.id == providerId && provider is ProviderSetting.Account) {

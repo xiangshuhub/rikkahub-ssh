@@ -22,6 +22,8 @@ private const val TAG = "UsageRecorder"
 /** 用量从哪类请求来，按名称存进 usage_record.source */
 enum class UsageSource {
     CHAT,
+    SUBAGENT,
+    SUBAGENT_SUMMARY,
     COMPRESSION,
     TITLE,
     SUGGESTION,

@@ -13,7 +13,9 @@
 
 ## 发布状态
 
-当前正式版 **v3.1.6**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.6) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.6)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
+当前正式版 **v3.1.7**：[Gitee 国内下载](https://gitee.com/chunjie008/rikkahub-ssh/releases/tag/v3.1.7) · [GitHub 备用下载](https://github.com/xiangshuhub/rikkahub-ssh/releases/tag/v3.1.7)。普通 Android 手机优先选择 `arm64-v8a`，模拟器可选择 `x86_64`，不确定时选择 `universal`。两边发布同一批 APK，签名与 SHA-256 一致，不使用上游下载通道。
+
+v3.1.7 更新：新增订阅账号登录与额度展示，以及原生子代理的并行/后台任务、父子问答、工作流、安全恢复和 Git 工作树。子代理统一在「设置 → 模型与服务 → 子代理」配置，默认开启、免审批，普通助手继承全局且可单独禁用；父助手权限、只读与预算边界仍保留。旧版助手专属子代理配置保留，可显式导入。详见 [子代理](docs/subagents.md) 和 [订阅账号](docs/account-logins.md)。
 
 v3.1.6 更新：默认助手精简及旧配置/历史保留、应用管理助手按空间 ID 读取 SSH 文件和执行 Shell、代理测试改为仅验证 SOCKS5 协商与认证。v3.1.5 已提供供应商独立 SOCKS5 代理、SSH 同名专属助手、目录历史与书签等功能。详见 [代理](docs/provider-proxy.md)、[工作空间助手](docs/workspace-assistant.md) 和 [文件浏览器](docs/workspace-browser.md) 文档。版本号跳过 v3.1.4；旧版可覆盖升级，升级前请备份。
 

@@ -100,6 +100,7 @@ fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool
 @Composable
 fun ChainOfThoughtScope.ChatMessageToolStep(
     tool: UIMessagePart.Tool,
+    conversationId: kotlin.uuid.Uuid? = null,
     loading: Boolean = false,
     assistant: Assistant? = null,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
@@ -125,13 +126,14 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     }
     // 输出不是 JSON (例如超长被截断后只剩文本预览) 时, 定制渲染器读不到任何字段, 详情改用默认渲染展示原文
     val outputUnparsable = tool.isExecuted && outputJson == null
-    val context = remember(tool, loading, assistant) {
+    val context = remember(tool, loading, assistant, conversationId) {
         ToolUIContext(
             tool = tool,
             arguments = tool.inputAsJson(),
             content = if (tool.isExecuted) outputJson ?: JsonObject(emptyMap()) else null,
             loading = loading,
             assistant = assistant,
+            conversationId = conversationId,
         )
     }
 

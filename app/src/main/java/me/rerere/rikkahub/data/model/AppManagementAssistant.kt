@@ -36,6 +36,8 @@ internal fun appManagementCapabilities(caller: Assistant, current: Settings): Se
 fun Assistant.managementOnly(): Assistant = if (!isAppManagementAssistant) this else copy(
     workspaceId = null,
     localTools = emptyList(),
+    subagents = subagents.copy(enabled = false),
+    subagentMode = me.rerere.rikkahub.subagent.SubagentMode.DISABLED,
     enabledSkills = emptySet(),
     mcpServers = emptySet(),
     enableWebSearch = false,

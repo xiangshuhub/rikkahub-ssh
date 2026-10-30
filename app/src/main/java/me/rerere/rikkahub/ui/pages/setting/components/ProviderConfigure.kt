@@ -123,6 +123,12 @@ fun ProviderConfigure(
                 disclaimer = stringResource(R.string.setting_provider_page_chatgpt_disclaimer),
             )
 
+            is ProviderSetting.Subscription -> ProviderConfigureAccount(
+                provider = provider, onEdit = onEdit, serviceName = provider.service.displayName,
+                plan = null,
+                disclaimer = "使用官方账号授权。可用模型与额度由账号权限决定；OpenRouter 授权生成 API Key，按余额计费。",
+            )
+
             is ProviderSetting.Grok -> ProviderConfigureAccount(
                 provider = provider,
                 onEdit = onEdit,
@@ -397,6 +403,29 @@ private fun ProviderConfigureAccount(
                 },
                 headlineContent = { Text(stringResource(R.string.setting_provider_page_sign_out)) },
             )
+        } else if (status is AccountLoginStatus.Browser) {
+            item(
+                onClick = { CustomTabsOAuthAuthorizationLauncher.launch(context, status.authorizationUrl) },
+                headlineContent = { Text("打开浏览器继续授权") },
+                supportingContent = { Text("回调失败时，粘贴最终回调网址或授权码。") },
+            )
+            formItem {
+                var input by remember(status) { mutableStateOf("") }
+                OutlinedTextField(
+                    value = input, onValueChange = { input = it },
+                    label = { Text("授权码 / 回调网址") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                androidx.compose.material3.Button(
+                    enabled = input.isNotBlank(),
+                    onClick = { accountManager.submitAuthorizationCode(provider.id, input); input = "" },
+                ) { Text("提交") }
+            }
+            item(
+                onClick = { accountManager.cancelLogin(provider.id) },
+                headlineContent = { Text(stringResource(R.string.cancel)) },
+            )
         } else if (status is AccountLoginStatus.DeviceCode) {
             item(
                 onClick = { CustomTabsOAuthAuthorizationLauncher.launch(context, status.verificationUrl) },
@@ -436,6 +465,17 @@ private fun ProviderConfigureAccount(
         }
     }
 
+    if (credential == null && provider is ProviderSetting.Subscription &&
+        provider.service == me.rerere.ai.provider.AccountService.CLAUDE) {
+        CardGroup {
+            item(
+                onClick = { accountManager.startLogin(provider.id, context, copyCode = true) },
+                headlineContent = { Text("复制授权码登录（备用）") },
+                supportingContent = { Text("浏览器登录后，将授权码复制回此页面。") },
+            )
+        }
+    }
+
     if (provider.supportsQuota) {
         AccountUsage(provider)
     }
@@ -451,6 +491,10 @@ private fun ProviderConfigureAccount(
 // 订阅用量：每个窗口一条进度和重置时间
 @Composable
 private fun AccountUsage(provider: ProviderSetting.Account) {
+    if (provider is ProviderSetting.Subscription) {
+        SubscriptionAccountUsage(provider)
+        return
+    }
     val result = rememberProviderQuota(provider)
     val limits = result?.getOrNull() as? ProviderQuota.UsageLimits
     CardGroup(title = { Text(stringResource(R.string.setting_provider_page_usage)) }) {

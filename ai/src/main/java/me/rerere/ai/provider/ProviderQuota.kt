@@ -15,6 +15,13 @@ sealed interface ProviderQuota {
     /** No supported API for this default query; guide the user to the provider's website instead. */
     data class Website(val url: String) : ProviderQuota
 
+    /** Named subscription windows or monetary budgets; missing values are never inferred as zero. */
+    data class AccountUsage(
+        val metrics: List<QuotaMetric>,
+        val checkedAt: Long,
+        val note: String? = null,
+    ) : ProviderQuota
+
     /** 订阅制的用量限制，按时间窗口统计已用比例 */
     data class UsageLimits(
         val windows: List<UsageWindow>,
@@ -22,6 +29,17 @@ sealed interface ProviderQuota {
         val limitReached: Boolean,
     ) : ProviderQuota
 }
+
+data class QuotaMetric(
+    val label: String,
+    val usedPercent: Double? = null,
+    val used: Double? = null,
+    val remaining: Double? = null,
+    val limit: Double? = null,
+    val unlimited: Boolean = false,
+    val unit: String? = null,
+    val resetsAt: String? = null,
+)
 
 data class UsageWindow(
     // 0~100

@@ -106,6 +106,7 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun ChatMessage(
     node: MessageNode,
+    conversationId: kotlin.uuid.Uuid? = null,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     model: Model? = null,
@@ -179,6 +180,7 @@ fun ChatMessage(
         ) {
             MessagePartsBlock(
                 assistant = assistant,
+                conversationId = conversationId,
                 role = message.role,
                 parts = message.parts,
                 annotations = message.annotations,
@@ -286,6 +288,7 @@ fun ChatMessage(
 @Composable
 private fun MessagePartsBlock(
     assistant: Assistant?,
+    conversationId: kotlin.uuid.Uuid? = null,
     role: MessageRole,
     model: Model?,
     parts: List<UIMessagePart>,
@@ -362,6 +365,7 @@ private fun MessagePartsBlock(
                                 key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
                                     ChatMessageToolStep(
                                         tool = step.tool,
+                                        conversationId = conversationId,
                                         loading = loading && !step.tool.isExecuted,
                                         assistant = assistant,
                                         onToolApproval = onToolApproval,

@@ -11,9 +11,9 @@ private val Context.toolApprovalDataStore by preferencesDataStore(name = "tool_a
 
 internal const val DEFAULT_AUTO_APPROVE_TOOLS = true
 
-// Questions and management mutations must never be bypassed by the ordinary-tool switch.
+// Questions, delegation and management mutations must never be bypassed by the ordinary-tool switch.
 internal fun shouldAutoApproveTool(name: String, autoApprove: Boolean): Boolean =
-    autoApprove && name != "ask_user" && !name.startsWith("app_management_")
+    autoApprove && name != "ask_user" && name != "subagent_dispatch" && !name.startsWith("app_management_")
 
 class ToolApprovalPreferences(context: Context) {
     private val store = context.applicationContext.toolApprovalDataStore

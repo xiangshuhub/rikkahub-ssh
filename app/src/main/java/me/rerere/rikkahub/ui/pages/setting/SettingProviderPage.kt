@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -561,7 +564,7 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
             ProviderSetting.Claude(),
             ProviderSetting.ChatGPT(),
             ProviderSetting.Grok(),
-        )
+        ) + me.rerere.ai.provider.AccountService.entries.map { ProviderSetting.Subscription(service = it) }
     }
 
     IconButton(
@@ -582,7 +585,8 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 16.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -635,6 +639,7 @@ private fun ProviderSetting.typeName(): String = when (this) {
     is ProviderSetting.Claude -> "Claude"
     is ProviderSetting.ChatGPT -> stringResource(R.string.setting_provider_page_type_subscription, "ChatGPT")
     is ProviderSetting.Grok -> stringResource(R.string.setting_provider_page_type_subscription, "Grok")
+    is ProviderSetting.Subscription -> service.displayName
 }
 
 @Composable

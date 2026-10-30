@@ -208,6 +208,13 @@ class ChatService(
         sessionManager.get(conversationId)?.takeIf { it.isInitialized }?.state?.value
             ?: conversationRepo.getConversationById(conversationId)
 
+    /** Unlike editor drafts, automated work must have a persisted, non-deleted parent. */
+    suspend fun getExistingConversation(conversationId: Uuid): Conversation? {
+        val session = sessionManager.get(conversationId)?.takeIf { it.isInitialized }
+        return if (session != null) session.state.value.takeIf { session.existsInDatabase }
+        else conversationRepo.getConversationById(conversationId)
+    }
+
     fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> =
         sessionManager.getGenerationJobStateFlow(conversationId)
 
@@ -386,6 +393,19 @@ class ChatService(
         }
     }
 
+    /** Child events never resurrect deleted conversations or resume a user-paused queue. */
+    suspend fun enqueueSubagentEvent(owner: me.rerere.rikkahub.subagent.SubagentOwner, key: String, text: String): Boolean =
+        withLoadedSession(owner.conversationId, createIfMissing = false) { session ->
+            synchronized(session) {
+                if (!session.existsInDatabase || session.state.value.assistantId != owner.assistantId || session.messageQueue.state.value.paused ||
+                    session.state.value.isAwaitingToolApproval) return@synchronized false
+                if (session.state.value.messageNodes.any { node -> node.messages.any { it.automationKey == key } }) return@synchronized true
+                session.messageQueue.enqueue(listOf(UIMessagePart.Text(text)), automationKey = key, automationOwnerId = owner.assistantId)
+                dispatchNextQueuedMessage(owner.conversationId)
+                true
+            }
+        }
+
     /** Enqueue immediately; the result belongs to this item even after edits or later turns. */
     fun enqueueVoiceMessage(conversationId: Uuid, text: String): Deferred<String?> {
         val session = sessionManager.getOrCreate(conversationId)
@@ -426,10 +446,11 @@ class ChatService(
         ) {
             try {
                 ensureInitialized(session)
+                if (queued.automationOwnerId != null && queued.automationOwnerId != session.state.value.assistantId) return@launchGenerationJob
                 finishInterruptedPendingTools(session)
 
                 val assistant = settingsStore.awaitLoaded().getStoredAssistantOf(session.state.value)
-                val processedContent = queued.parts.replaceUserRegexes(assistant)
+                val processedContent = if (queued.automationKey == null) queued.parts.replaceUserRegexes(assistant) else queued.parts
 
                 // 添加消息到列表
                 val previousIds = session.state.value.currentMessages.mapTo(HashSet()) { it.id }
@@ -438,6 +459,8 @@ class ChatService(
                         messageNodes = it.messageNodes + UIMessage(
                             role = MessageRole.USER,
                             parts = processedContent,
+                            automationKey = queued.automationKey,
+                            automationOwnerId = queued.automationOwnerId,
                         ).toMessageNode(),
                     )
                 }
@@ -880,7 +903,9 @@ class ChatService(
             val settings = settingsStore.awaitLoaded()
             val conversation = session.state.value
             val stored = settings.getStoredAssistantOf(conversation)
-            val updated = update(settings.getAssistantOf(conversation))
+            val previous = settings.getAssistantOf(conversation)
+            val updated = update(previous)
+            if (updated.workspaceId != previous.workspaceId) requestFactory.cancelSubagents(conversationId)
             val assistant = updated.withoutConversationFields(conversation, stored)
             session.updateMetadata(
                 transform = { it.withAssistantUpdate(updated, settings) },
@@ -955,6 +980,7 @@ class ChatService(
     // 工作目录和配置一起按列落库；还没落过库的新会话先留在内存里，发出第一条消息时一起写入
     suspend fun updateWorkspaceCwd(conversationId: Uuid, workspaceCwd: String?) {
         withLoadedSession(conversationId) { session ->
+            if (session.state.value.workspaceCwd != workspaceCwd) requestFactory.cancelSubagents(conversationId)
             session.updateMetadata(
                 transform = { it.copy(workspaceCwd = workspaceCwd) },
                 persist = conversationRepo::updateConversationConfig,
@@ -1014,6 +1040,7 @@ class ChatService(
     }
 
     suspend fun moveConversationToAssistant(conversationId: Uuid, assistantId: Uuid) {
+        if (getConversation(conversationId)?.assistantId != assistantId) requestFactory.cancelSubagents(conversationId)
         updateConversationMetadata(
             conversationId = conversationId,
             // 文件夹属于助手，移动后清除原助手的文件夹归属。
@@ -1085,6 +1112,7 @@ class ChatService(
      * 还停在这个会话上的页面看到的是空会话，之后再发消息会新建记录，不会写回已删除的那条。
      */
     suspend fun deleteConversation(conversationId: Uuid) {
+        stopGeneration(conversationId)
         val session = sessionManager.getOrCreate(conversationId)
         discardQueuedMessages(session)
         session.replace(newConversation(conversationId), existsInDatabase = false) { previous ->
@@ -1241,13 +1269,18 @@ class ChatService(
 
     // 停止当前会话生成任务（不清理会话缓存）
     suspend fun stopGeneration(conversationId: Uuid) {
-        val session = sessionManager.get(conversationId) ?: return
+        val session = sessionManager.get(conversationId)
+        if (session == null) {
+            requestFactory.cancelSubagents(conversationId)
+            return
+        }
         val jobs = synchronized(session) {
             session.messageQueue.pause()
             session.cancelJobs()
         }
-        if (jobs.isEmpty()) return
         jobs.forEach { it.join() }
+        requestFactory.cancelSubagents(conversationId)
+        if (jobs.isEmpty()) return
         if (session.isInitialized) finishInterruptedPendingTools(session)
     }
 }

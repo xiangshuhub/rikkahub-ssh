@@ -537,6 +537,10 @@ class RouteActivity : ComponentActivity() {
                                 me.rerere.rikkahub.ui.pages.setting.SettingToolApprovalsPage()
                             }
 
+                            entry<Screen.SettingSubagents> {
+                                me.rerere.rikkahub.ui.pages.setting.SettingSubagentsPage()
+                            }
+
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
                             }
@@ -789,6 +793,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingToolApprovals : Screen
+
+    @Serializable
+    data object SettingSubagents : Screen
 
     @Serializable
     data object Debug : Screen

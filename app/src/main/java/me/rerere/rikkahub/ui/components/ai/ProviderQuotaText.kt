@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.CancellationException
+import me.rerere.ai.provider.QuotaMetric
+import java.util.Locale
 import androidx.compose.ui.platform.LocalContext
 import me.rerere.rikkahub.utils.openUrl
 import androidx.compose.foundation.layout.Arrangement
@@ -40,32 +43,40 @@ private val cache = SimpleCache.builder<String, ProviderQuota>()
     .build()
 
 /**
- * 查询提供商的额度，结果缓存 2 分钟，失败不缓存。返回 null 表示还在查询。
+ * 查询提供商额度。普通提供商成功结果缓存 2 分钟；订阅适配器自行短时缓存成功和失败。
+ * 返回 null 表示还在查询。
  *
  * 调用前先用 [supportsQuota] 判断有没有额度可查。
  */
 @Composable
-fun rememberProviderQuota(providerSetting: ProviderSetting): Result<ProviderQuota>? {
+fun rememberProviderQuota(providerSetting: ProviderSetting, refreshKey: Int = 0): Result<ProviderQuota>? {
     val providerManager = koinInject<ProviderManager>()
     // 查询配置或登录的账号变了要重新查
     val cacheKey = "${providerSetting.id},${providerSetting.proxy.hashCode()}," + when (providerSetting) {
         is ProviderSetting.ApiKey -> listOf(providerSetting.baseUrl, providerSetting.apiKey, providerSetting.quotaQuery).hashCode()
-        is ProviderSetting.Account -> providerSetting.credential?.accountId
+        is ProviderSetting.Subscription -> listOf(providerSetting.service, providerSetting.credential).hashCode()
+        is ProviderSetting.Account -> providerSetting.credential.hashCode()
     }
+    // Subscription adapters cache successes and failures and partition by the actual credential.
+    val useUiCache = providerSetting !is ProviderSetting.Subscription
     val quota by produceState(
-        initialValue = cache.getIfPresent(cacheKey)?.let { Result.success(it) },
-        cacheKey,
+        initialValue = if (useUiCache) cache.getIfPresent(cacheKey)?.let { Result.success(it) } else null,
+        cacheKey, refreshKey, (providerSetting as? ProviderSetting.Account)?.credential,
     ) {
-        val cached = cache.getIfPresent(cacheKey)
+        val cached = if (useUiCache) cache.getIfPresent(cacheKey) else null
         if (cached != null) {
             value = Result.success(cached)
             return@produceState
         }
         value = null
-        value = runCatching {
-            providerManager.getProviderByType(providerSetting).getQuota(providerSetting)
-                ?: error("Quota is not available")
-        }.onSuccess { cache.put(cacheKey, it) }
+        value = try {
+            Result.success(providerManager.getProviderByType(providerSetting).getQuota(providerSetting)
+                ?: error("Quota is not available"))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }.onSuccess { if (useUiCache) cache.put(cacheKey, it) }
     }
     return quota
 }
@@ -86,6 +97,11 @@ fun ProviderQuotaText(
         result == null -> "~"
         quota == null -> "Error: ${result.exceptionOrNull()?.message}"
         else -> when (quota) {
+            is ProviderQuota.AccountUsage -> {
+                val prefix = if (providerSetting is ProviderSetting.Subscription &&
+                    providerSetting.service == me.rerere.ai.provider.AccountService.META) "快照 · " else ""
+                prefix + quota.metrics.joinToString(" · ") { "${it.label}: ${it.summary()}" }
+            }
             is ProviderQuota.Balance -> quota.value
             is ProviderQuota.Website -> stringResource(R.string.provider_quota_view_website)
             is ProviderQuota.UsageLimits -> quota.windows.joinToString(" · ") { window ->
@@ -113,6 +129,19 @@ fun ProviderQuotaText(
             color = color
         )
     }
+}
+
+internal fun QuotaMetric.summary(): String {
+    fun number(value: Double) = String.format(Locale.ROOT, "%.2f", value).trimEnd('0').trimEnd('.')
+    fun amount(value: Double) = number(value) + if (unit != null) " $unit" else ""
+    if (unlimited && unit != "USD") return "无限额度"
+    return buildList {
+        if (unlimited) add("Key 未设置限额")
+        usedPercent?.let { add("${number(it)}% 已用") }
+        remaining?.let { add("剩余 ${amount(it)}") }
+        used?.let { add("已用 ${amount(it)}") }
+        limit?.let { add("上限 ${amount(it)}") }
+    }.joinToString(" · ").ifEmpty { "暂不可查询" }
 }
 
 private enum class WindowUnit(val minutes: Int, val suffix: String) {

@@ -263,6 +263,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingSubagents) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("全局${if (settings.subagents.enabled) "开启" else "关闭"} · 角色、模型、预算与任务管理") },
+                        headlineContent = { Text("子代理") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingToolApprovals) },
                         leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.tool_approvals_auto)) },

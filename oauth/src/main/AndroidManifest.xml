@@ -13,7 +13,7 @@
       android:foregroundServiceType="specialUse">
       <property
         android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-        android:value="temporary local OAuth loopback callback server awaiting browser authorization" />
+        android:value="temporary OAuth authorization session awaiting browser callback, manual code or device-code polling" />
     </service>
   </application>
 

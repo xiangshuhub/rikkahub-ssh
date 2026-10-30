@@ -359,6 +359,7 @@ private fun ChatListNormal(
                     ) {
                         ChatMessage(
                             node = node,
+                            conversationId = conversation.id,
                             model = node.currentMessage.modelId?.let(modelById::get)
                                 ?: node.currentMessage.snapshotModel(),
                             assistant = assistant,

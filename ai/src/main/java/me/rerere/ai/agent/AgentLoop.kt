@@ -163,10 +163,12 @@ internal class AgentLoop(
             // 只给真正运行的工具计时；开始时先写一次，界面才能在执行中实时显示耗时
             val runs = tool.approvalState == ToolApprovalState.Auto || tool.approvalState == ToolApprovalState.Approved
             if (runs) updateTool(tool.toolCallId) { it.copy(startedAt = Clock.System.now(), finishedAt = null) }
+            if (runs) hooks.beforeToolExecution(checkNotNull(message), tool)
             val output = execute(tool)
             updateTool(tool.toolCallId) {
                 it.copy(output = output, finishedAt = if (runs) Clock.System.now() else it.finishedAt)
             }
+            if (runs) hooks.afterToolExecution(checkNotNull(message), tool)
         }
     }
 

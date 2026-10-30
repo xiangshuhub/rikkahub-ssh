@@ -681,6 +681,7 @@ object ChatboxImporter {
         is ProviderSetting.Claude -> "claude"
         is ProviderSetting.ChatGPT -> "chatgpt"
         is ProviderSetting.Grok -> "grok"
+        is ProviderSetting.Subscription -> "subscription:${service.name}"
     }
 
     private fun String.toMessageRole(): MessageRole? = when (this) {
